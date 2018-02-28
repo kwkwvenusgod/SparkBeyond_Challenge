@@ -20,7 +20,8 @@ if __name__ == "__main__":
               load_model=config['load_model'],
               load_type=config['load_type'],
               bootstrap=config['bootstrap'],
-              bootstrap_seed=config['bootstrap_seed'])
+              bootstrap_seed=config['bootstrap_seed'],
+              del_cols=config['del_cols'])
 
     wnv.train()
 

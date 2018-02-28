@@ -138,7 +138,7 @@ class WNV:
                            "subsample": 1, "verbose": 50}, test_metric='normalized_weighted_gini', na_fill_value=-20000,
                  silent=False, skip_mapping=False, load_model=None, train_filter=None, metric_type='auto',
                  load_type='fit_more',
-                 bootstrap=0, bootstrap_seed=None, weight_col=None):
+                 bootstrap=0, bootstrap_seed=None, weight_col=None, del_cols=[]):
 
         self._train_data_file = train_data_file
         self._target_col = target_col
@@ -160,6 +160,7 @@ class WNV:
         self._staged_predict = None
         self._feat_importance_fun = None
         self._predict = None
+        self._del_cols = del_cols
 
     def staged_pred_proba(self, x):
         for pred in self._model.staged_predict_proba(x):
@@ -195,9 +196,22 @@ class WNV:
             print "Train has %d instances (was %d before filtering)" % (len(train_x), len_train_before)
 
         mappings = None if self._skip_mapping else dict()
+        if mappings is not None:
+            data_all = train_x
+            for col in train_x.columns:
+                if col not in ['target_col']:
+                    if data_all[col].dtype == np.dtype('object'):
+                        s = np.unique(data_all[col].fillna(self._na_fill_value).values)
+                        mappings[col] = pd.Series([x[0] for x in enumerate(s)], index=s)
+                        train_x[col] = train_x[col].map(mappings[col]).fillna(self._na_fill_value)
+                    else:
+                        train_x[col] = train_x[col].fillna(self._na_fill_value)
+            del data_all
 
         train_y = train_x[self._target_col]
         del train_x[self._target_col]
+        for col in self._del_cols:
+            del train_x[col]
 
         extra_fit_args = dict()
         if self._weight_col is not None:
@@ -227,14 +241,14 @@ class WNV:
 
         if self._model_type == "RandomForestRegressor":
             if model is None:
-                model = RandomForestRegressor(self._fit_args)
+                model = RandomForestRegressor(**self._fit_args)
                 model.fit(X=train_x, y=train_y, **extra_fit_args)
                 self._model = model
                 self._predict = lambda (fitted_model, pred_x): self.continuous_predict(x=pred_x)
 
         elif self._model_type == "RandomForestClassifier":
             if model is None:
-                model = RandomForestClassifier(self._fit_args)
+                model = RandomForestClassifier(**self._fit_args)
                 model.fit(X=train_x, y=train_y, **extra_fit_args)
                 self._model = model
                 self._predict = lambda (fitted_model, pred_x): self.pred_proba(x=pred_x)
@@ -242,21 +256,21 @@ class WNV:
 
         elif self._model_type == "ExtraTreesRegressor":
             if model is None:
-                model = ExtraTreesRegressor(self._fit_args)
+                model = ExtraTreesRegressor(**self._fit_args)
                 model.fit(X=train_x, y=train_y, **extra_fit_args)
                 self._model = model
                 self._predict = lambda (fitted_model, pred_x): self.continuous_predict(x=pred_x)
 
         elif self._model_type == "ExtraTreesClassifier":
             if model is None:
-                model = ExtraTreesClassifier(self._fit_args)
+                model = ExtraTreesClassifier(**self._fit_args)
                 model.fit(X=train_x, y=train_y, **extra_fit_args)
             self._predict = lambda (fitted_model, pred_x): self.pred_proba(x=pred_x)
             self._staged_predict = lambda (fitted_model, pred_x): [self._predict((fitted_model, pred_x))]
 
         elif self._model_type == "GradientBoostingRegressor":
             if model is None:
-                model = GradientBoostingRegressor(self._fit_args)
+                model = GradientBoostingRegressor(**self._fit_args)
                 model.fit(X=train_x, y=train_y, **extra_fit_args)
                 self._model = model
             elif self._load_type == "fit_more":
@@ -274,7 +288,7 @@ class WNV:
                                                                                                     'n_estimators'])
         elif self._model_type == "GradientBoostingClassifier":
             if model is None:
-                model = GradientBoostingClassifier(self._fit_args)
+                model = GradientBoostingClassifier(**self._fit_args)
                 model.fit(X=train_x, y=train_y, **extra_fit_args)
                 self._model = model
             elif self._load_type == "fit_more":
@@ -292,7 +306,7 @@ class WNV:
                                                                                                'n_estimators'])
         elif self._model_type == "LogisticRegression":
             if model is None:
-                model = LogisticRegression(self._fit_args)
+                model = LogisticRegression(**self._fit_args)
                 model.fit(X=train_x, y=train_y)
                 self._model = model
             self._predict = lambda (fitted_model, pred_x): self.pred_proba(x=pred_x)
@@ -385,3 +399,9 @@ class WNV:
 
         if output_file is not None:
             test_pred.to_csv(output_file, index=False)
+
+    def get_feat_importance(self):
+        if self._model is not None:
+            std = np.std([self._model.feature_importance_])
+        else:
+            print("The chosen algo does not process feature selection")
