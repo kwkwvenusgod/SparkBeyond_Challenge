@@ -434,41 +434,82 @@ class WNV:
         weather_data = load_pd_df(self._input_dir+'/weather.csv')
         weather_headers = weather_data.columns.values
 
-
-
         if mode=="test":
-            data_file = load_pd_df(self._input_dir+'/test.csv')
+            train_data = load_pd_df(self._input_dir+'/test.csv')
         else:
-            data_file = load_pd_df(self._input_dir+'/train.csv')
+            train_data = load_pd_df(self._input_dir+'/train.csv')
 
         data = []
 
         #=================== Parse Train File =========================
         date = []
-        for tmp in data_file["Date"]:
+        for tmp in train_data["Date"]:
             tmp = tmp.split('-')
             tmp = tmp[1]+'-'+tmp[2]
             date.append(tmp)
         data.append(date)
 
-        species = data_file["Species"]
+        species = train_data["Species"]
         data.append(species)
 
-        longitude = data_file["Longitude"]
+        longitude = train_data["Longitude"]
         data.append(longitude)
 
-        latitude = data_file["Latitude"]
+        latitude = train_data["Latitude"]
         data.append(latitude)
 
-        trap = data_file["Trap"]
+        trap = train_data["Trap"]
         data.append(trap)
 
-        addr = data_file["Address"]
+        addr = train_data["Address"]
         data.append(addr)
 
         #=================== Parse weather data ===============
+        tmax = []
+        tmin = []
+        dewPoint = []
+        wetBulb = []
+        heat = []
+        cool = []
+        sunrise = []
+        sunset = []
+        stnPressure = []
+        seaLevel = []
+        resultSpeed = []
+        resultDir = []
+        avgSpeed = []
 
-        for dd in data_file["Date"]:
+        for i in range(len(train_data["Date"])):
+            indices = weather_data["Date"].index(train_data["Date"][i])
+            tmax.append(np.mean(weather_data["Tmax"][indices]))
+            tmin.append(np.mean(weather_data["Tmin"][indices]))
+            dewPoint.append(np.mean(weather_data["DewPoint"][indices]))
+            wetBulb.append(np.mean(weather_data["WetBulb"][indices]))
+            heat.append(np.mean(weather_data["Heat"][indices]))
+            cool.append(np.mean(weather_data["Cool"][indices]))
+            sunrise.append(np.mean(weather_data["Sunrise"][indices]))
+            sunset.append(np.mean(weather_data["Sunset"][indices]))
+            stnPressure.append(np.mean(weather_data["StnPressure"][indices]))
+            seaLevel.append(np.mean(weather_data["SeaLevel"][indices]))
+            resultSpeed.append(np.mean(weather_data["ResultSpeed"][indices]))
+            resultDir.append(np.mean(weather_data["ResultDir"][indices]))
+            avgSpeed.append(np.mean(weather_data["AvgSpeed"][indices]))
+
+        data.append(tmax)
+        data.append(tmin)
+        data.append(dewPoint)
+        data.append(wetBulb)
+        data.append(heat)
+        data.append(cool)
+        data.append(sunrise)
+        data.append(sunset)
+        data.append(stnPressure)
+        data.append(resultSpeed)
+        data.append(resultDir)
+        data.append(avgSpeed)
+        
+        return data, train_data[self._target_col]
+
             
 
 
