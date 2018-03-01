@@ -2,6 +2,7 @@ import sklearn
 from sklearn.ensemble import GradientBoostingRegressor, GradientBoostingClassifier, \
     RandomForestRegressor, RandomForestClassifier, ExtraTreesClassifier, ExtraTreesRegressor
 from sklearn.linear_model import LogisticRegression
+import matplotlib.pyplot as plt
 import sklearn.metrics as sk_metrics
 import custom_metrics
 import pandas as pd
@@ -14,6 +15,7 @@ import os
 import math
 import random
 from sklearn.pipeline import Pipeline
+from collections import Counter
 import inspect
 
 
@@ -27,22 +29,8 @@ def save_model_bin(model, model_file):
     Pickle.dump(model, model_file, Pickle.HIGHEST_PROTOCOL)
 
 
-def load_pd_df(file_name, del_old=False, bin_suffix='.bin.pkl'):
-    ret_val = None
-    bin_file_name = file_name + bin_suffix
-    if os.path.isfile(bin_file_name):
-        if not os.path.isfile(file_name) or os.path.getmtime(bin_file_name) > os.path.getmtime(file_name):
-            ret_val = load_model_bin(model_file=bin_file_name)
-            print "Loading %s cache file" % bin_file_name
-
-    if ret_val is None:
-        print "Loading %s raw file" % file_name
-        ret_val = pd.read_csv(file_name)
-        print "Saving %s cache file" % bin_file_name
-        save_model_bin(model=ret_val, model_file=bin_file_name)
-        if del_old:
-            print "Erasing %s raw file" % file_name
-            os.remove(file_name)
+def load_pd_df(file_name):
+    ret_val = pd.read_csv(file_name)
     return ret_val
 
 
@@ -131,7 +119,7 @@ def print_stages(test_y, stage_predictions, test_metric, metric_type, test_weigh
 
 
 class WNV:
-    def __init__(self, train_data_file, target_col,
+    def __init__(self, input_dir ,train_data_file, target_col,
                  model_type='GradientBoostingRegressor',
                  fit_args={"n_estimators": 10, "learning_rate": 0.001, "loss": "ls",
                            "max_features": 5, "max_depth": 7, "random_state": 788954,
@@ -139,7 +127,7 @@ class WNV:
                  silent=False, skip_mapping=False, load_model=None, train_filter=None, metric_type='auto',
                  load_type='fit_more',
                  bootstrap=0, bootstrap_seed=None, weight_col=None, del_cols=[]):
-
+        self._input_dir = input_dir
         self._train_data_file = train_data_file
         self._target_col = target_col
         self._model_type = model_type
@@ -158,9 +146,10 @@ class WNV:
         self._features = None
         self._model = None
         self._staged_predict = None
-        self._feat_importance_fun = None
+        self._have_feat_importance = False
         self._predict = None
         self._del_cols = del_cols
+        self._data_balance = False
 
     def staged_pred_proba(self, x):
         for pred in self._model.staged_predict_proba(x):
@@ -209,6 +198,14 @@ class WNV:
             del data_all
 
         train_y = train_x[self._target_col]
+        counts = Counter(train_y)
+        expectation_ratio = 1/float(len(counts.keys()))
+        n_samples = len(train_y)
+        for key,value in counts.items():
+            tmp = float(expectation_ratio)/(float(value)/float(n_samples))
+            if (tmp>6)|(tmp<(1.0/6.0)):
+                self._data_balance = True
+
         del train_x[self._target_col]
         for col in self._del_cols:
             del train_x[col]
@@ -233,7 +230,6 @@ class WNV:
 
         x_cols = train_x.columns.values
         self._features = x_cols
-        self._feat_importance_fun = lambda (fitted_model): fitted_model.feature_importances_
         self._predict = lambda (fitted_model, pred_x): fitted_model.predict(pred_x)
         self._staged_predict = lambda (fitted_model, pred_x): [self._predict((fitted_model, pred_x))]
 
@@ -241,32 +237,44 @@ class WNV:
 
         if self._model_type == "RandomForestRegressor":
             if model is None:
+                if self._data_balance is True:
+                    self._fit_args.update({"class_weight":"balanced"})
                 model = RandomForestRegressor(**self._fit_args)
                 model.fit(X=train_x, y=train_y, **extra_fit_args)
                 self._model = model
                 self._predict = lambda (fitted_model, pred_x): self.continuous_predict(x=pred_x)
+                self._have_feat_importance = True
 
         elif self._model_type == "RandomForestClassifier":
             if model is None:
+                if self._data_balance is True:
+                    self._fit_args.update({"class_weight": "balanced"})
                 model = RandomForestClassifier(**self._fit_args)
                 model.fit(X=train_x, y=train_y, **extra_fit_args)
                 self._model = model
                 self._predict = lambda (fitted_model, pred_x): self.pred_proba(x=pred_x)
             self._staged_predict = lambda (fitted_model, pred_x): [self._predict((fitted_model, pred_x))]
+            self._have_feat_importance = True
 
         elif self._model_type == "ExtraTreesRegressor":
             if model is None:
+                if self._data_balance is True:
+                    self._fit_args.update({"class_weight": "balanced"})
                 model = ExtraTreesRegressor(**self._fit_args)
                 model.fit(X=train_x, y=train_y, **extra_fit_args)
                 self._model = model
                 self._predict = lambda (fitted_model, pred_x): self.continuous_predict(x=pred_x)
+                self._have_feat_importance = True
 
         elif self._model_type == "ExtraTreesClassifier":
             if model is None:
+                if self._data_balance is True:
+                    self._fit_args.update({"class_weight": "balanced"})
                 model = ExtraTreesClassifier(**self._fit_args)
                 model.fit(X=train_x, y=train_y, **extra_fit_args)
             self._predict = lambda (fitted_model, pred_x): self.pred_proba(x=pred_x)
             self._staged_predict = lambda (fitted_model, pred_x): [self._predict((fitted_model, pred_x))]
+            self._have_feat_importance = True
 
         elif self._model_type == "GradientBoostingRegressor":
             if model is None:
@@ -306,21 +314,23 @@ class WNV:
                                                                                                'n_estimators'])
         elif self._model_type == "LogisticRegression":
             if model is None:
+                if self._data_balance is True:
+                    self._fit_args.update({"class_weight": "balanced"})
                 model = LogisticRegression(**self._fit_args)
                 model.fit(X=train_x, y=train_y)
                 self._model = model
             self._predict = lambda (fitted_model, pred_x): self.pred_proba(x=pred_x)
             self._staged_predict = lambda (fitted_model, pred_x): [self._predict((fitted_model, pred_x))]
-            self._feat_importance_fun = lambda (fitted_model): None
 
         elif self._model_type == "SVC":
             if model is None:
+                if self._data_balance is True:
+                    self._fit_args.update({"class_weight": "balanced"})
                 model = sklearn.svm.SVC(self._fit_args)
                 model.fit(X=train_x, y=train_y)
                 self._model = model
             self._predict = lambda (fitted_model, pred_x): self.pred_proba(x=pred_x)
             self._staged_predict = lambda (fitted_model, pred_x): [self._predict((fitted_model, pred_x))]
-            self._feat_importance_fun = lambda (fitted_model): None
 
         elif self._model_type == "Pipeline":
             if model is None:
@@ -333,7 +343,6 @@ class WNV:
                 self._model = model
             self._predict = lambda (fitted_model, pred_x): self.pred_proba(x=pred_x)
             self._staged_predict = lambda (fitted_model, pred_x): [self._predict((fitted_model, pred_x))]
-            self._feat_importance_fun = lambda (fitted_model): None
 
         if not self._silent:
             stop = timeit.default_timer()
@@ -386,7 +395,10 @@ class WNV:
                          test_metric=self._test_metric, metric_type=self._metric_type, test_weight=test_weight)
 
         if not self._silent:
-            feat_importance = self._feat_importance_fun(self._model)
+            if self._have_feat_importance:
+                feat_importance = self._model.feature_importance_
+            else:
+                feat_importance = None
             if feat_importance is not None:
                 feat_importance = pd.DataFrame({'Features': self._features,
                                                 'Importance': feat_importance})
@@ -400,8 +412,69 @@ class WNV:
         if output_file is not None:
             test_pred.to_csv(output_file, index=False)
 
-    def get_feat_importance(self):
-        if self._model is not None:
-            std = np.std([self._model.feature_importance_])
+    def get_feat_importance(self, fname=None):
+        if (self._model is not None) & self._have_feat_importance:
+            importances = self._model.feature_importances_
+            std = np.std([tree.feature_importances_ for tree in self._model.estimators_], axis=0)
+            indices = np.argsort(importances)
+
+            fig = plt.figure()
+            plt.title("Feature importance")
+            plt.bar(range(len(self._features[indices])), importances[indices], color="r", yerr=std[indices], align="center")
+            plt.xticks(range(len(self._features)), self._features[indices], rotation=30)
+            fig.tight_layout()
+            if fname is None:
+                fig.savefig("feature-importance.jpg", format="jpg")
+            else:
+                fig.savefig(fname, format="jpg")
         else:
-            print("The chosen algo does not process feature selection")
+            print("The chosen algo does not process feature importance function")
+
+    def feature_extraction(self, mode="train"):
+        weather_data = load_pd_df(self._input_dir+'/weather.csv')
+        weather_headers = weather_data.columns.values
+
+
+
+        if mode=="test":
+            data_file = load_pd_df(self._input_dir+'/test.csv')
+        else:
+            data_file = load_pd_df(self._input_dir+'/train.csv')
+
+        data = []
+
+        #=================== Parse Train File =========================
+        date = []
+        for tmp in data_file["Date"]:
+            tmp = tmp.split('-')
+            tmp = tmp[1]+'-'+tmp[2]
+            date.append(tmp)
+        data.append(date)
+
+        species = data_file["Species"]
+        data.append(species)
+
+        longitude = data_file["Longitude"]
+        data.append(longitude)
+
+        latitude = data_file["Latitude"]
+        data.append(latitude)
+
+        trap = data_file["Trap"]
+        data.append(trap)
+
+        addr = data_file["Address"]
+        data.append(addr)
+
+        #=================== Parse weather data ===============
+
+        for dd in data_file["Date"]:
+            
+
+
+
+
+
+
+
+

@@ -6,7 +6,8 @@ if __name__ == "__main__":
     with open(config_file_path, 'rb') as config_file:
         config = simplejson.load(config_file)
 
-    wnv = WNV(train_data_file=config['train_file_path'],
+    wnv = WNV(input_dir=config["input_dir"],
+              train_data_file=config['train_file_path'],
               test_metric=config['test_metric'],
               target_col=config['target_col'],
               weight_col=config['weight_col'],
@@ -24,4 +25,5 @@ if __name__ == "__main__":
               del_cols=config['del_cols'])
 
     wnv.train()
+    wnv.get_feat_importance()
 
