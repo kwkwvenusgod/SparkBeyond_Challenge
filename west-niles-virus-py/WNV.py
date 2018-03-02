@@ -1,6 +1,9 @@
 import sklearn
+import copy
+import datetime
 from sklearn.ensemble import GradientBoostingRegressor, GradientBoostingClassifier, \
     RandomForestRegressor, RandomForestClassifier, ExtraTreesClassifier, ExtraTreesRegressor
+from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.linear_model import LogisticRegression
 import matplotlib.pyplot as plt
 import sklearn.metrics as sk_metrics
@@ -11,7 +14,6 @@ import numpy as np
 import ml_metrics
 import cPickle as Pickle
 import itertools
-import os
 import math
 import random
 from sklearn.pipeline import Pipeline
@@ -117,7 +119,6 @@ def print_stages(test_y, stage_predictions, test_metric, metric_type, test_weigh
     print("Loss:")
     print(loss_df)
 
-
 class WNV:
     def __init__(self, input_dir ,train_data_file, target_col,
                  model_type='GradientBoostingRegressor',
@@ -177,27 +178,24 @@ class WNV:
     def train(self):
         start = timeit.default_timer()
 
-        train_x = load_pd_df(self._train_data_file)
-
-        len_train_before = len(train_x)
-        train_x = data_filter(train_x, self._train_filter)
+        train_x,train_y,feature_list = self.feature_extraction()
+        self._features = feature_list
         if not self._silent:
-            print "Train has %d instances (was %d before filtering)" % (len(train_x), len_train_before)
+            print "Train has %d instances " % (len(train_x))
 
         mappings = None if self._skip_mapping else dict()
         if mappings is not None:
             data_all = train_x
-            for col in train_x.columns:
-                if col not in ['target_col']:
-                    if data_all[col].dtype == np.dtype('object'):
-                        s = np.unique(data_all[col].fillna(self._na_fill_value).values)
-                        mappings[col] = pd.Series([x[0] for x in enumerate(s)], index=s)
-                        train_x[col] = train_x[col].map(mappings[col]).fillna(self._na_fill_value)
-                    else:
-                        train_x[col] = train_x[col].fillna(self._na_fill_value)
-            del data_all
+            for i in range(len(self._features)):
+                if data_all[i].dtype == np.dtype('object'):
+                    values = np.unique(data_all[i])
+                    keys = range(len(values))
+                    mappings_tmp = dict(zip(values,keys))
+                    mappings[i] = mappings_tmp
+                    train_x[i] = train_x[i].map(mappings[i]).fillna(self._na_fill_value)
+                else:
+                    train_x[i] = train_x[i].fillna(self._na_fill_value)
 
-        train_y = train_x[self._target_col]
         counts = Counter(train_y)
         expectation_ratio = 1/float(len(counts.keys()))
         n_samples = len(train_y)
@@ -205,10 +203,6 @@ class WNV:
             tmp = float(expectation_ratio)/(float(value)/float(n_samples))
             if (tmp>6)|(tmp<(1.0/6.0)):
                 self._data_balance = True
-
-        del train_x[self._target_col]
-        for col in self._del_cols:
-            del train_x[col]
 
         extra_fit_args = dict()
         if self._weight_col is not None:
@@ -229,7 +223,7 @@ class WNV:
             train_y.reset_index()
 
         x_cols = train_x.columns.values
-        self._features = x_cols
+
         self._predict = lambda (fitted_model, pred_x): fitted_model.predict(pred_x)
         self._staged_predict = lambda (fitted_model, pred_x): [self._predict((fitted_model, pred_x))]
 
@@ -432,7 +426,11 @@ class WNV:
 
     def feature_extraction(self, mode="train"):
         weather_data = load_pd_df(self._input_dir+'/weather.csv')
-        weather_headers = weather_data.columns.values
+        spray_data = load_pd_df(self._input_dir+ '/spray.csv')
+
+        del spray_data["Time"]
+
+        spray_data = spray_data.drop_duplicates()
 
         if mode=="test":
             train_data = load_pd_df(self._input_dir+'/test.csv')
@@ -440,6 +438,7 @@ class WNV:
             train_data = load_pd_df(self._input_dir+'/train.csv')
 
         data = []
+        feature_list = ["Date", "Species","Longitude","Latitude","Trap", "Address"]
 
         #=================== Parse Train File =========================
         date = []
@@ -449,66 +448,62 @@ class WNV:
             date.append(tmp)
         data.append(date)
 
-        species = train_data["Species"]
+        species = train_data["Species"].tolist()
         data.append(species)
 
-        longitude = train_data["Longitude"]
+        longitude = train_data["Longitude"].tolist()
         data.append(longitude)
 
-        latitude = train_data["Latitude"]
+        latitude = train_data["Latitude"].tolist()
         data.append(latitude)
 
-        trap = train_data["Trap"]
+        trap = train_data["Trap"].tolist()
         data.append(trap)
 
-        addr = train_data["Address"]
+        addr = train_data["Address"].tolist()
         data.append(addr)
 
+        data = np.asarray(data)
+
         #=================== Parse weather data ===============
-        tmax = []
-        tmin = []
-        dewPoint = []
-        wetBulb = []
-        heat = []
-        cool = []
-        sunrise = []
-        sunset = []
-        stnPressure = []
-        seaLevel = []
-        resultSpeed = []
-        resultDir = []
-        avgSpeed = []
-
+        weather_data_feature = ['Tmax','Tmin','DewPoint',"WetBulb","Heat","Cool","Sunrise","Sunset","StnPressure",
+                                    "SeaLevel","ResultSpeed","ResultDir","AvgSpeed"]
+        feature_list.append(weather_data)
+        w_selection = list(weather_data[weather_data_feature].groupby(weather_data["Date"]))
+        w_record_date = weather_data["Date"].drop_duplicates().tolist()
+        weather_feature = []
         for i in range(len(train_data["Date"])):
-            indices = weather_data["Date"].index(train_data["Date"][i])
-            tmax.append(np.mean(weather_data["Tmax"][indices]))
-            tmin.append(np.mean(weather_data["Tmin"][indices]))
-            dewPoint.append(np.mean(weather_data["DewPoint"][indices]))
-            wetBulb.append(np.mean(weather_data["WetBulb"][indices]))
-            heat.append(np.mean(weather_data["Heat"][indices]))
-            cool.append(np.mean(weather_data["Cool"][indices]))
-            sunrise.append(np.mean(weather_data["Sunrise"][indices]))
-            sunset.append(np.mean(weather_data["Sunset"][indices]))
-            stnPressure.append(np.mean(weather_data["StnPressure"][indices]))
-            seaLevel.append(np.mean(weather_data["SeaLevel"][indices]))
-            resultSpeed.append(np.mean(weather_data["ResultSpeed"][indices]))
-            resultDir.append(np.mean(weather_data["ResultDir"][indices]))
-            avgSpeed.append(np.mean(weather_data["AvgSpeed"][indices]))
+            indices = w_record_date.index(train_data["Date"][i])
+            w_selection_tmp = w_selection[indices][1].get_values()[0]
+            weather_feature.append(w_selection_tmp)
 
-        data.append(tmax)
-        data.append(tmin)
-        data.append(dewPoint)
-        data.append(wetBulb)
-        data.append(heat)
-        data.append(cool)
-        data.append(sunrise)
-        data.append(sunset)
-        data.append(stnPressure)
-        data.append(resultSpeed)
-        data.append(resultDir)
-        data.append(avgSpeed)
-        
-        return data, train_data[self._target_col]
+        weather_feature = np.asarray(weather_feature).transpose()
+
+        data=np.concatenate([data,weather_feature])
+
+        spray_indicator = np.zeros((1,len(date)))
+        thres_date = 5
+        thres_area = 0.55
+        train_data_dates = train_data["Date"].drop_duplicates().tolist()
+        spray_la_long_list = list(spray_data[["Latitude","Longitude"]].groupby(spray_data["Date"]))
+        train_data_la_long_list = list(train_data[["Latitude","Longitude"]].groupby(train_data["Date"]))
+        for spray_la_long_date in spray_la_long_list:
+            spray_date_tmp_start = datetime.datetime.strptime(spray_la_long_date[0], '%Y-%m-%d')
+            spray_date_tmp_end = spray_date_tmp_start + datetime.timedelta(days=thres_date)
+            spray_location_tmp = spray_la_long_date[1].get_values()
+
+            for i in range(len(train_data_dates)):
+                train_data_date = datetime.datetime.strptime(train_data_dates[i], '%Y-%m-%d')
+                if (train_data_date>spray_date_tmp_start)&(train_data_date<=spray_date_tmp_end):
+                    train_location= train_data_la_long_list[i][1].get_values()
+                    train_location_indices = train_data_la_long_list[i][1].axes[0].get_values()
+                    distances = euclidean_distances(spray_location_tmp,train_location)
+                    indices = np.unique(np.where(distances<thres_area)[1], return_index=False).astype(int)
+                    indices = train_location_indices[indices].astype(int)
+                    spray_indicator[0,indices] = 1
+        data = np.concatenate([data, spray_indicator])
+        feature_list.append(["Spray"])
+        return data, train_data[self._target_col],feature_list
 
             
 
