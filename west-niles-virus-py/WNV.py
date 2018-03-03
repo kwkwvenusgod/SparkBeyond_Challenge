@@ -1,9 +1,9 @@
 import sklearn
-import copy
 import datetime
 from sklearn.ensemble import GradientBoostingRegressor, GradientBoostingClassifier, \
     RandomForestRegressor, RandomForestClassifier, ExtraTreesClassifier, ExtraTreesRegressor
 from sklearn.metrics.pairwise import euclidean_distances
+from sklearn.metrics import confusion_matrix
 from sklearn.linear_model import LogisticRegression
 import matplotlib.pyplot as plt
 import sklearn.metrics as sk_metrics
@@ -151,6 +151,7 @@ class WNV:
         self._predict = None
         self._del_cols = del_cols
         self._data_balance = False
+        self._feature_mapping_dict = {}
 
     def staged_pred_proba(self, x):
         for pred in self._model.staged_predict_proba(x):
@@ -183,19 +184,6 @@ class WNV:
         if not self._silent:
             print "Train has %d instances " % (len(train_x))
 
-        mappings = None if self._skip_mapping else dict()
-        if mappings is not None:
-            data_all = train_x
-            for i in range(len(self._features)):
-                if data_all[i].dtype == np.dtype('object'):
-                    values = np.unique(data_all[i])
-                    keys = range(len(values))
-                    mappings_tmp = dict(zip(values,keys))
-                    mappings[i] = mappings_tmp
-                    train_x[i] = train_x[i].map(mappings[i]).fillna(self._na_fill_value)
-                else:
-                    train_x[i] = train_x[i].fillna(self._na_fill_value)
-
         counts = Counter(train_y)
         expectation_ratio = 1/float(len(counts.keys()))
         n_samples = len(train_y)
@@ -222,8 +210,6 @@ class WNV:
             train_y = train_y.iloc[bootstrap_ix]
             train_y.reset_index()
 
-        x_cols = train_x.columns.values
-
         self._predict = lambda (fitted_model, pred_x): fitted_model.predict(pred_x)
         self._staged_predict = lambda (fitted_model, pred_x): [self._predict((fitted_model, pred_x))]
 
@@ -241,8 +227,8 @@ class WNV:
 
         elif self._model_type == "RandomForestClassifier":
             if model is None:
-                if self._data_balance is True:
-                    self._fit_args.update({"class_weight": "balanced"})
+                # if self._data_balance is True:
+                #     self._fit_args.update({"class_weight": "balanced"})
                 model = RandomForestClassifier(**self._fit_args)
                 model.fit(X=train_x, y=train_y, **extra_fit_args)
                 self._model = model
@@ -414,11 +400,11 @@ class WNV:
 
             fig = plt.figure()
             plt.title("Feature importance")
-            plt.bar(range(len(self._features[indices])), importances[indices], color="r", yerr=std[indices], align="center")
-            plt.xticks(range(len(self._features)), self._features[indices], rotation=30)
+            plt.bar(range(len(self._features)), importances[indices], color="r", yerr=std[indices], align="center")
+            plt.xticks(range(len(self._features)), np.asarray(self._features)[indices], rotation=90)
             fig.tight_layout()
             if fname is None:
-                fig.savefig("feature-importance.jpg", format="jpg")
+                fig.savefig("feature-importance.png", format="png")
             else:
                 fig.savefig(fname, format="jpg")
         else:
@@ -438,7 +424,7 @@ class WNV:
             train_data = load_pd_df(self._input_dir+'/train.csv')
 
         data = []
-        feature_list = ["Date", "Species","Longitude","Latitude","Trap", "Address"]
+        feature_list = ["Date", "Species","Longitude","Latitude","Trap", "Address", "Street"]
 
         #=================== Parse Train File =========================
         date = []
@@ -463,12 +449,15 @@ class WNV:
         addr = train_data["Address"].tolist()
         data.append(addr)
 
+        street = train_data["Street"].tolist()
+        data.append(street)
+
         data = np.asarray(data)
 
-        #=================== Parse weather data ===============
+        # #=================== Parse weather data ===============
         weather_data_feature = ['Tmax','Tmin','DewPoint',"WetBulb","Heat","Cool","Sunrise","Sunset","StnPressure",
                                     "SeaLevel","ResultSpeed","ResultDir","AvgSpeed"]
-        feature_list.append(weather_data)
+        feature_list.extend(weather_data_feature)
         w_selection = list(weather_data[weather_data_feature].groupby(weather_data["Date"]))
         w_record_date = weather_data["Date"].drop_duplicates().tolist()
         weather_feature = []
@@ -483,7 +472,7 @@ class WNV:
 
         spray_indicator = np.zeros((1,len(date)))
         thres_date = 5
-        thres_area = 0.55
+        thres_area = 0.6
         train_data_dates = train_data["Date"].drop_duplicates().tolist()
         spray_la_long_list = list(spray_data[["Latitude","Longitude"]].groupby(spray_data["Date"]))
         train_data_la_long_list = list(train_data[["Latitude","Longitude"]].groupby(train_data["Date"]))
@@ -502,8 +491,106 @@ class WNV:
                     indices = train_location_indices[indices].astype(int)
                     spray_indicator[0,indices] = 1
         data = np.concatenate([data, spray_indicator])
-        feature_list.append(["Spray"])
-        return data, train_data[self._target_col],feature_list
+        feature_list.extend(["Spray"])
+
+        data_feature = np.zeros(data.shape)
+        for i in range(data.shape[0]):
+            if (data[i].dtype != np.dtype('float'))|(data[i].dtype != np.dtype('int'))|(data[i].dtype != np.dtype('double')):
+                data_feature[i] = self.transform_categorical_numerical(i, data[i],mode=mode)
+            else:
+                data_feature[i] = data[i]
+
+        return data_feature.transpose(), list(train_data[self._target_col]),feature_list
+
+    def transform_categorical_numerical(self, ind, xind, mode="train"):
+
+        if mode == "train":
+            keys = np.unique(xind)
+            values = range(len(keys))
+            mappings_tmp = dict(zip(keys,values))
+            self._feature_mapping_dict.update({ind: mappings_tmp})
+            new_xind = np.asarray([float(mappings_tmp[key]) for key in xind])
+        else:
+            mappings_tmp = self._feature_mapping_dict[ind]
+            new_xind = np.asarray([mappings_tmp[key] for key in xind])
+        return new_xind
+
+    def evaluation(self):
+        train_x,y_true, feature_list = self.feature_extraction()
+        y_pred = self._model.predict(train_x)
+        cfm = confusion_matrix(y_true=y_true, y_pred=y_pred)
+
+        print cfm
+        return cfm
+
+    def basic_evaluation(self):
+        train_data = load_pd_df(self._input_dir + '/train.csv')
+        pres_train_data = train_data.loc[train_data['WnvPresent'] == 1]
+
+        mapdata = np.loadtxt("../west_nile/input/mapdata_copyright_openstreetmap_contributors.txt")
+
+        aspect = mapdata.shape[0] * 1.0 / mapdata.shape[1]
+        lon_lat_box = (-88, -87.5, 41.6, 42.1)
+
+        plt.figure(figsize=(10, 14))
+        plt.imshow(mapdata,
+                   cmap=plt.get_cmap('gray'),
+                   extent=lon_lat_box,
+                   aspect=aspect)
+
+        pres_traps = pres_train_data[['Date', 'Trap','Longitude', 'Latitude', 'WnvPresent']]
+        pres_locations = pres_traps[['Longitude', 'Latitude']].drop_duplicates().values
+
+        all_traps = train_data[['Date', 'Trap','Longitude', 'Latitude', 'WnvPresent']]
+        all_locations = all_traps[['Longitude', 'Latitude']].drop_duplicates().values
+
+        plt.scatter(all_locations[:, 0], all_locations[:, 1], marker='o', color='blue')
+        plt.scatter(pres_locations[:, 0], pres_locations[:, 1], marker='x', color='red')
+        plt.savefig('heatmap.png')
+
+    def spray_effectiveness_eval(self):
+        train_data = load_pd_df(self._input_dir + '/train.csv')
+        spray_data = load_pd_df(self._input_dir + '/spray.csv')
+
+        spray_dates = spray_data['Date'].drop_duplicates().values
+        spray_duration = 5
+
+        for i in range(len(spray_dates)):
+            spray_date = spray_dates[i]
+            spray_effective_day_list = [datetime.datetime.strptime(spray_date,'%Y-%m-%d') + datetime.timedelta(days=j)
+                                         for j in range(spray_duration)]
+
+            mapdata = np.loadtxt("../west_nile/input/mapdata_copyright_openstreetmap_contributors.txt")
+
+            aspect = mapdata.shape[0] * 1.0 / mapdata.shape[1]
+            lon_lat_box = (-88, -87.5, 41.6, 42.1)
+
+            plt.figure(figsize=(10, 14))
+            plt.imshow(mapdata,
+                       cmap=plt.get_cmap('gray'),
+                       extent=lon_lat_box,
+                       aspect=aspect)
+
+            spray_locations = spray_data[['Longitude', 'Latitude']].loc[spray_data['Date'] == spray_dates[i]].drop_duplicates().values
+            plt.scatter(spray_locations[:, 0], spray_locations[:, 1], marker="D", color='green')
+
+            for spray_effective_day in spray_effective_day_list:
+                train_spray_data = train_data.loc[train_data['Date'] == datetime.datetime.strftime(spray_effective_day,'%Y-%m-%d')]
+                if len(train_spray_data) != 0:
+                    pres_locations = train_spray_data[['Longitude', 'Latitude']].loc[train_spray_data['WnvPresent'] == 1].drop_duplicates().values
+                    all_locations = train_spray_data[['Longitude', 'Latitude']].drop_duplicates().values
+
+                    plt.scatter(all_locations[:, 0], all_locations[:, 1], marker='o', color='blue')
+                    plt.scatter(pres_locations[:, 0], pres_locations[:, 1], marker='x', color='red')
+            plt.title(spray_dates[i])
+            plt.savefig('spray_effectiveness/'+spray_dates[i]+'.png')
+
+
+
+
+
+
+
 
             
 

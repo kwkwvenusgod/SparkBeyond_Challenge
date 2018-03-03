@@ -24,6 +24,9 @@ if __name__ == "__main__":
               bootstrap_seed=config['bootstrap_seed'],
               del_cols=config['del_cols'])
 
+    wnv.basic_evaluation()
+    wnv.spray_effectiveness_eval()
     wnv.train()
+    wnv.evaluation()
     wnv.get_feat_importance()
 
