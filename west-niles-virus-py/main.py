@@ -1,4 +1,6 @@
 import simplejson
+import pandas as pd
+import utils
 from WNV import WNV
 
 if __name__ == "__main__":
@@ -24,9 +26,26 @@ if __name__ == "__main__":
               bootstrap_seed=config['bootstrap_seed'],
               del_cols=config['del_cols'])
 
-    wnv.basic_evaluation()
-    wnv.spray_effectiveness_eval()
+    # wnv.basic_evaluation()
+    # wnv.spray_effectiveness_eval()
     wnv.train()
     wnv.evaluation()
     wnv.get_feat_importance()
+
+    testx,testy,featurelist = wnv.feature_extraction(mode='test')
+    y_test_pred = wnv.predict(testx)
+
+    test_origin = pd.read_csv('../west_nile/input/test.csv')
+    test_origin['WnvPresent'] = pd.Series(y_test_pred, index=test_origin.index)
+
+    utils.draw_affected_area(test_origin,'predict_distribution')
+    utils.draw_affected_area(test_origin,'predict_distribution', mode='year')
+    utils.draw_affected_area(test_origin,'predict_distribution', mode='year_month')
+
+
+
+
+
+    #draw result
+
 
