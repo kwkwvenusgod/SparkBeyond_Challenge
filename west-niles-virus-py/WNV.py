@@ -131,9 +131,26 @@ def process_date(date_list):
     return date
 
 
+
+
+def transfer_list(input_list):
+    n_samples = len(input_list)
+    n_features = len(input_list[0])
+    res = np.zeros((n_features,n_samples))
+
+    for i in range(n_samples):
+        tmp = np.asarray(input_list[i])
+        if tmp.dtype != 'object':
+            res[:,i] = tmp
+        else:
+            print tmp
+    return res
+
+
 def process_spray_data(input_data, spray_data):
-    feature_list = ["Date", "Species", "Longitude", "Latitude", "Trap", "Address", "Street",'Tmax', 'Tmin', 'DewPoint', "WetBulb", "Heat", "Cool", "Sunrise", "Sunset",
-                    "StnPressure","SeaLevel", "ResultSpeed", "ResultDir", "AvgSpeed"]
+    feature_list = ["Date", "Species", "Longitude", "Latitude", "Trap", "Address", "Street", 'Tmax', 'Tmin',
+                    'DewPoint', "WetBulb", "Heat", "Cool", "Sunrise", "Sunset",
+                    "StnPressure", "SeaLevel", "ResultSpeed", "ResultDir", "AvgSpeed", "NumMosquitos"]
 
     input_data = input_data[feature_list]
 
@@ -158,9 +175,9 @@ def process_spray_data(input_data, spray_data):
                 indices = train_location_indices[indices].astype(int)
                 spray_indicator[indices] = 1
 
-    input_data.loc[:,'Date'] = process_date(input_data['Date'].values)
+    input_data.loc[:, 'Date'] = process_date(input_data['Date'].values)
     input_data['StnPressure'].loc[input_data['StnPressure'] == 'M'] = float('NaN')
-    input_data.loc[:,'StnPressure'] = map(float,input_data['StnPressure'].values)
+    input_data.loc[:, 'StnPressure'] = map(float, input_data['StnPressure'].values)
 
     input_data['AvgSpeed'].loc[input_data['AvgSpeed'] == 'M'] = float('NaN')
     input_data.loc[:, 'AvgSpeed'] = map(float, input_data['AvgSpeed'].values)
@@ -181,25 +198,15 @@ def process_spray_data(input_data, spray_data):
     input_data.loc[:, 'Sunset'] = map(float, input_data['Sunset'].values)
 
     input_data['SeaLevel'].loc[input_data['SeaLevel'] == 'M'] = float('NaN')
-    input_data.loc[:, 'SeaLevel'] = map(float, input_data['SeaLevel'].values)
+    input_data['SeaLevel'] = pd.Series(map(float, input_data['SeaLevel'].values), index=input_data.index)
+
+    total_mosq = np.sum(input_data['NumMosquitos'].fillna(0).values)
+    perc_mosq = np.asarray(input_data['NumMosquitos'].fillna(0).values) / total_mosq
+    input_data['NumMosquitos'] = pd.Series(perc_mosq, index=input_data.index)
 
     input_data['Spray'] = pd.Series(list(spray_indicator), index=input_data.index)
     feature_list.append('Spray')
     return input_data, feature_list
-
-
-def transfer_list(input_list):
-    n_samples = len(input_list)
-    n_features = len(input_list[0])
-    res = np.zeros((n_features,n_samples))
-
-    for i in range(n_samples):
-        tmp = np.asarray(input_list[i])
-        if tmp.dtype != 'object':
-            res[:,i] = tmp
-        else:
-            print tmp
-    return res
 
 
 class WNV:
@@ -495,7 +502,7 @@ class WNV:
         else:
             print("The chosen algo does not process feature importance function")
 
-    def feature_extraction(self,mode="train", input_file_name=None):
+    def feature_extraction(self,mode="train", input_test=None):
         feature_mode = self._feature_mode
         weather_data = load_pd_df(self._input_dir + '/weather.csv')
         weather_data = weather_data.loc[weather_data['Station'] == 1]
@@ -543,14 +550,60 @@ class WNV:
                             x[col] = x[col].fillna(self._na_fill_value)
                 self._feature_mapping_dict = mappings
             y = train_data[self._target_col].values
-        elif (mode == 'test') & (input_file_name is not None):
-            input_data = load_pd_df(input_file_name)
+        elif mode == 'eval':
+            input_data = load_pd_df(self._input_dir + '/train.csv')
             input_data = input_data.merge(weather_data,on='Date',how='left')
             input_data_proc, feature_list = process_spray_data(input_data, spray_data)
             x = copy.deepcopy(input_data_proc)
+
             if feature_mode == 'one_hot':
-                x = self.transform_categorical_onehot(input_data_proc)
+                for col in x.columns:
+                    if input_data_proc[col].dtype == np.dtype('object'):
+                        mapping_dataframe = self._feature_mapping_dict[col]
+                        x[col] = pd.Series(x[col].map(lambda t: map(float, mapping_dataframe[t].values)), index=x.index)
+                    else:
+                        x[col] = x[col].fillna(self._na_fill_value)
+                feature_x = transfer_list(x[x.columns.values[0]].values)
+                for i in range(1, len(x.columns.values)):
+                    if x.columns.values[i] in self._feature_mapping_dict.keys():
+                        tmp = transfer_list(x[x.columns.values[i]].values)
+                        feature_x = np.concatenate((feature_x, tmp))
+                    else:
+                        tmp = np.reshape(x[x.columns.values[i]].values, (1, len(x)))
+                        feature_x = np.concatenate((feature_x, tmp))
+                x = feature_x.transpose()
+                y = input_data[self._target_col]
+
+            elif feature_mode == 'label':
+                for col in x.columns:
+                    if x[col].dtype == np.dtype('object'):
+                        x[col] = x[col].map(self._feature_mapping_dict[col]).fillna(self._na_fill_value)
+                    else:
+                        x[col] = x[col].fillna(self._na_fill_value)
+                y = input_data[self._target_col]
+        elif (mode == 'test')&(input_test is not None):
+            input_test = input_test.merge(weather_data, on='Date', how='left')
+            input_data_proc, feature_list = process_spray_data(input_test, spray_data)
+            x = copy.deepcopy(input_data_proc)
+
+            if feature_mode == 'one_hot':
+                for col in x.columns:
+                    if input_data_proc[col].dtype == np.dtype('object'):
+                        mapping_dataframe = self._feature_mapping_dict[col]
+                        x[col] = pd.Series(x[col].map(lambda t: map(float, mapping_dataframe[t].values)), index=x.index)
+                    else:
+                        x[col] = x[col].fillna(self._na_fill_value)
+                feature_x = transfer_list(x[x.columns.values[0]].values)
+                for i in range(1, len(x.columns.values)):
+                    if x.columns.values[i] in self._feature_mapping_dict.keys():
+                        tmp = transfer_list(x[x.columns.values[i]].values)
+                        feature_x = np.concatenate((feature_x, tmp))
+                    else:
+                        tmp = np.reshape(x[x.columns.values[i]].values, (1, len(x)))
+                        feature_x = np.concatenate((feature_x, tmp))
+                x = feature_x.transpose()
                 y = []
+
             elif feature_mode == 'label':
                 for col in x.columns:
                     if x[col].dtype == np.dtype('object'):
@@ -590,7 +643,7 @@ class WNV:
 
     def evaluation(self):
         train_file_name = self._input_dir + '/train.csv'
-        train_x, y_true, feature_list = self.feature_extraction(mode='test', input_file_name=train_file_name)
+        train_x, y_true, feature_list = self.feature_extraction(mode='eval')
         y_true = load_pd_df(train_file_name)[self._target_col]
         y_pred = self._model.predict(train_x)
         cfm = confusion_matrix(y_true=y_true, y_pred=y_pred)

@@ -33,10 +33,16 @@ if __name__ == "__main__":
     wnv.evaluation()
     wnv.get_feat_importance()
 
-    testx,testy,featurelist = wnv.feature_extraction(mode='test', input_file_name='../west_nile/input/test.csv')
+    test_origin = pd.read_csv('../west_nile/input/test.csv')
+    group_features = ["Date","Address","Species","Block","Street","Trap",
+                      "AddressNumberAndStreet","Latitude","Longitude","AddressAccuracy"]
+    numMosqs = test_origin.groupby(group_features)['Id'].transform("count")
+    test_origin['NumMosquitos'] = numMosqs
+    testx,testy,featurelist = wnv.feature_extraction(mode='test', input_test=test_origin)
     y_test_pred = wnv.predict(testx)
 
-    test_origin = pd.read_csv('../west_nile/input/test.csv')
+
+    test_origin.groupby('Date').count()
     test_origin['WnvPresent'] = pd.Series(y_test_pred, index=test_origin.index)
 
     test_origin[['Id','WnvPresent']].to_csv('sampleSubmission.csv',index=False)
