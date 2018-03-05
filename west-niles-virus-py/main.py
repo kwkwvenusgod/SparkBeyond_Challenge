@@ -38,6 +38,8 @@ if __name__ == "__main__":
     test_origin = pd.read_csv('../west_nile/input/test.csv')
     test_origin['WnvPresent'] = pd.Series(y_test_pred, index=test_origin.index)
 
+    test_origin[['Id','WnvPresent']].to_csv('sampleSubmission.csv',index=False)
+
     utils.draw_affected_area(test_origin,'predict_distribution')
     utils.draw_affected_area(test_origin,'predict_distribution', mode='year')
     utils.draw_affected_area(test_origin,'predict_distribution', mode='year_month')

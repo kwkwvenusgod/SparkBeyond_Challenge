@@ -425,16 +425,17 @@ class WNV:
 
     def feature_extraction(self,mode="train", feature_mode='label'):
         weather_data = load_pd_df(self._input_dir + '/weather.csv')
-        spray_data = load_pd_df(self._input_dir + '/spray.csv')
+        weather_data = weather_data.loc[weather_data['Station'] == 1]
+        train_data = load_pd_df(self._input_dir + '/train.csv')
 
-        del spray_data["Time"]
+        train_weather_data = train_data.merge(weather_data, on='Date', how='left')
+        spray_data = load_pd_df(self._input_dir + '/spray.csv')[["Date","Latitude","Longitude"]].drop_duplicates()
 
         spray_data = spray_data.drop_duplicates()
 
         train_data = load_pd_df(self._input_dir + '/train.csv')
         test_data = load_pd_df(self._input_dir + '/test.csv')
-        all_data = train_data
-        all_data=all_data.append(test_data)
+        all_data = train_data.append(test_data)
 
         if mode == 'train':
             all_data_proc, feature_list = self.process_raw_pd_data(all_data, weather_data, spray_data, feature_mode=feature_mode,mode='train')
@@ -458,6 +459,7 @@ class WNV:
         return x,y, feature_list
 
     def process_raw_pd_data(self, input_data, weather_data, spray_data, feature_mode='label',mode='train'):
+
 
         data = []
         feature_list = ["Date", "Species", "Longitude", "Latitude", "Trap", "Address", "Street"]
