@@ -32,7 +32,7 @@ if __name__ == "__main__":
     wnv.evaluation()
     wnv.get_feat_importance()
 
-    testx,testy,featurelist = wnv.feature_extraction(mode='test')
+    testx,testy,featurelist = wnv.feature_extraction(mode='test', input_file_name='../west_nile/input/test.csv')
     y_test_pred = wnv.predict(testx)
 
     test_origin = pd.read_csv('../west_nile/input/test.csv')

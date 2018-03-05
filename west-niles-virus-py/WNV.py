@@ -1,5 +1,5 @@
 import sklearn
-import datetime
+import datetime, sys
 from sklearn.ensemble import GradientBoostingRegressor, GradientBoostingClassifier, \
     RandomForestRegressor, RandomForestClassifier, ExtraTreesClassifier, ExtraTreesRegressor
 from sklearn.metrics.pairwise import euclidean_distances
@@ -129,6 +129,63 @@ def process_date(date_list):
         tmp = tmp[1] + '-' + tmp[2]
         date.append(tmp)
     return date
+
+
+def process_spray_data(input_data, spray_data):
+    feature_list = ["Date", "Species", "Longitude", "Latitude", "Trap", "Address", "Street",'Tmax', 'Tmin', 'DewPoint', "WetBulb", "Heat", "Cool", "Sunrise", "Sunset",
+                    "StnPressure","SeaLevel", "ResultSpeed", "ResultDir", "AvgSpeed"]
+
+    input_data = input_data[feature_list]
+
+    spray_indicator = np.zeros(len(input_data))
+    thres_date = 5
+    thres_area = 0.6
+    train_data_dates = input_data["Date"].drop_duplicates().tolist()
+    spray_la_long_list = list(spray_data[["Latitude", "Longitude"]].groupby(spray_data["Date"]))
+    train_data_la_long_list = list(input_data[["Latitude", "Longitude"]].groupby(input_data["Date"]))
+    for spray_la_long_date in spray_la_long_list:
+        spray_date_tmp_start = datetime.datetime.strptime(spray_la_long_date[0], '%Y-%m-%d')
+        spray_date_tmp_end = spray_date_tmp_start + datetime.timedelta(days=thres_date)
+        spray_location_tmp = spray_la_long_date[1].get_values()
+
+        for i in range(len(train_data_dates)):
+            train_data_date = datetime.datetime.strptime(train_data_dates[i], '%Y-%m-%d')
+            if (train_data_date > spray_date_tmp_start) & (train_data_date <= spray_date_tmp_end):
+                train_location = train_data_la_long_list[i][1].get_values()
+                train_location_indices = train_data_la_long_list[i][1].axes[0].get_values()
+                distances = euclidean_distances(spray_location_tmp, train_location)
+                indices = np.unique(np.where(distances < thres_area)[1], return_index=False).astype(int)
+                indices = train_location_indices[indices].astype(int)
+                spray_indicator[indices] = 1
+
+    input_data.loc[:,'Date'] = process_date(input_data['Date'].values)
+    input_data['StnPressure'].loc[input_data['StnPressure'] == 'M'] = float('NaN')
+    input_data.loc[:,'StnPressure'] = map(float,input_data['StnPressure'].values)
+
+    input_data['AvgSpeed'].loc[input_data['AvgSpeed'] == 'M'] = float('NaN')
+    input_data.loc[:, 'AvgSpeed'] = map(float, input_data['AvgSpeed'].values)
+
+    input_data['WetBulb'].loc[input_data['WetBulb'] == 'M'] = float('NaN')
+    input_data.loc[:, 'WetBulb'] = map(float, input_data['WetBulb'].values)
+
+    input_data['Heat'].loc[input_data['Heat'] == 'M'] = float('NaN')
+    input_data.loc[:, 'Heat'] = map(float, input_data['Heat'].values)
+
+    input_data['Cool'].loc[input_data['Cool'] == 'M'] = float('NaN')
+    input_data.loc[:, 'Cool'] = map(float, input_data['Cool'].values)
+
+    input_data['Sunrise'].loc[input_data['Sunrise'] == 'M'] = float('NaN')
+    input_data.loc[:, 'Sunrise'] = map(float, input_data['Sunrise'].values)
+
+    input_data['Sunset'].loc[input_data['Sunset'] == 'M'] = float('NaN')
+    input_data.loc[:, 'Sunset'] = map(float, input_data['Sunset'].values)
+
+    input_data['SeaLevel'].loc[input_data['SeaLevel'] == 'M'] = float('NaN')
+    input_data.loc[:, 'SeaLevel'] = map(float, input_data['SeaLevel'].values)
+
+    input_data['Spray'] = pd.Series(list(spray_indicator), index=input_data.index)
+    feature_list.append('Spray')
+    return input_data, feature_list
 
 
 class WNV:
@@ -423,119 +480,57 @@ class WNV:
         else:
             print("The chosen algo does not process feature importance function")
 
-    def feature_extraction(self,mode="train", feature_mode='label'):
+    def feature_extraction(self,mode="train", feature_mode='label', input_file_name=None):
         weather_data = load_pd_df(self._input_dir + '/weather.csv')
         weather_data = weather_data.loc[weather_data['Station'] == 1]
-        train_data = load_pd_df(self._input_dir + '/train.csv')
-
-        train_weather_data = train_data.merge(weather_data, on='Date', how='left')
-        spray_data = load_pd_df(self._input_dir + '/spray.csv')[["Date","Latitude","Longitude"]].drop_duplicates()
-
+        spray_data = load_pd_df(self._input_dir + '/spray.csv')[["Date", "Latitude", "Longitude"]].drop_duplicates()
         spray_data = spray_data.drop_duplicates()
 
-        train_data = load_pd_df(self._input_dir + '/train.csv')
-        test_data = load_pd_df(self._input_dir + '/test.csv')
-        all_data = train_data.append(test_data)
-
         if mode == 'train':
-            all_data_proc, feature_list = self.process_raw_pd_data(all_data, weather_data, spray_data, feature_mode=feature_mode,mode='train')
-            train_data_proc, feature_list = self.process_raw_pd_data(train_data, weather_data, spray_data,feature_mode=feature_mode,mode='test')
+            train_data = load_pd_df(self._input_dir + '/train.csv')
+            test_data = load_pd_df(self._input_dir + '/test.csv')
+            train_weather_data = train_data.merge(weather_data, on='Date', how='left')
+            all_data = train_data.append(test_data)
+            all_data_weather = all_data.merge(weather_data, on='Date', how='left')
 
+            all_data_proc, feature_list = process_spray_data(all_data_weather, spray_data)
+            train_data_proc, feature_list = process_spray_data(train_weather_data, spray_data)
+            self._features = feature_list
+            x = copy.deepcopy(train_data_proc)
             if feature_mode == 'onehot':
                 x = self.transform_categorical_onehot(train_data_proc, all_data=all_data_proc)
                 y = train_data[self._target_col].values
             elif feature_mode == 'label':
-                x = train_data_proc
+                mappings = dict()
+                if mappings is not None:
+                    for col in train_data_proc.columns:
+                        if all_data_proc[col].dtype == np.dtype('object'):
+                            s = np.unique(all_data_proc[col].fillna(self._na_fill_value).values)
+                            mappings[col] = pd.Series([t[0] for t in enumerate(s)], index=s)
+                            x[col] = x[col].map(mappings[col]).fillna(self._na_fill_value)
+                        else:
+                            x[col] = x[col].fillna(self._na_fill_value)
+                self._feature_mapping_dict = mappings
                 y = train_data[self._target_col].values
-        else:
-            test_data_proc, feature_list = self.process_raw_pd_data(test_data, weather_data, spray_data, feature_mode=feature_mode,mode=mode)
+        elif (mode == 'test') & (input_file_name is not None):
+            input_data = load_pd_df(input_file_name)
+            input_data = input_data.merge(weather_data,on='Date',how='left')
+            input_data_proc, feature_list = process_spray_data(input_data, spray_data)
+            x = copy.deepcopy(input_data_proc)
             if feature_mode == 'onehot':
-                x = self.transform_categorical_onehot(test_data_proc)
-                y = train_data[self._target_col].values
-            elif feature_mode == 'label':
-                x = test_data_proc
+                x = self.transform_categorical_onehot(input_data_proc)
                 y = []
+            elif feature_mode == 'label':
+                for col in x.columns:
+                    if x[col].dtype == np.dtype('object'):
+                        x[col] = x[col].map(self._feature_mapping_dict[col]).fillna(self._na_fill_value)
+                    else:
+                        x[col] = x[col].fillna(self._na_fill_value)
+                y = []
+        else:
+            sys.exit()
 
         return x,y, feature_list
-
-    def process_raw_pd_data(self, input_data, weather_data, spray_data, feature_mode='label',mode='train'):
-
-
-        data = []
-        feature_list = ["Date", "Species", "Longitude", "Latitude", "Trap", "Address", "Street"]
-
-        # =================== Parse Train File =========================
-        date = process_date(input_data['Date'].values)
-        data.append(date)
-
-        species = input_data["Species"].tolist()
-        data.append(species)
-
-        longitude = input_data["Longitude"].tolist()
-        data.append(longitude)
-
-        latitude = input_data["Latitude"].tolist()
-        data.append(latitude)
-
-        trap = input_data["Trap"].tolist()
-        data.append(trap)
-
-        addr = input_data["Address"].tolist()
-        data.append(addr)
-
-        street = input_data["Street"].tolist()
-        data.append(street)
-
-        data = np.asarray(data)
-
-        # #=================== Parse weather data ===============
-        weather_data_feature = ['Tmax', 'Tmin', 'DewPoint', "WetBulb", "Heat", "Cool", "Sunrise", "Sunset",
-                                "StnPressure",
-                                "SeaLevel", "ResultSpeed", "ResultDir", "AvgSpeed"]
-        feature_list.extend(weather_data_feature)
-        w_selection = list(weather_data[weather_data_feature].groupby(weather_data["Date"]))
-        w_record_date = weather_data["Date"].drop_duplicates().tolist()
-        weather_feature = []
-        for i in range(len(input_data["Date"])):
-            indices = w_record_date.index(input_data["Date"].values[i])
-            w_selection_tmp = w_selection[indices][1].get_values()[0]
-            weather_feature.append(w_selection_tmp)
-
-        weather_feature = np.asarray(weather_feature).transpose()
-
-        data = np.concatenate([data, weather_feature])
-
-        spray_indicator = np.zeros((1, len(date)))
-        thres_date = 5
-        thres_area = 0.6
-        train_data_dates = input_data["Date"].drop_duplicates().tolist()
-        spray_la_long_list = list(spray_data[["Latitude", "Longitude"]].groupby(spray_data["Date"]))
-        train_data_la_long_list = list(input_data[["Latitude", "Longitude"]].groupby(input_data["Date"]))
-        for spray_la_long_date in spray_la_long_list:
-            spray_date_tmp_start = datetime.datetime.strptime(spray_la_long_date[0], '%Y-%m-%d')
-            spray_date_tmp_end = spray_date_tmp_start + datetime.timedelta(days=thres_date)
-            spray_location_tmp = spray_la_long_date[1].get_values()
-
-            for i in range(len(train_data_dates)):
-                train_data_date = datetime.datetime.strptime(train_data_dates[i], '%Y-%m-%d')
-                if (train_data_date > spray_date_tmp_start) & (train_data_date <= spray_date_tmp_end):
-                    train_location = train_data_la_long_list[i][1].get_values()
-                    train_location_indices = train_data_la_long_list[i][1].axes[0].get_values()
-                    distances = euclidean_distances(spray_location_tmp, train_location)
-                    indices = np.unique(np.where(distances < thres_area)[1], return_index=False).astype(int)
-                    indices = train_location_indices[indices].astype(int)
-                    spray_indicator[0, indices] = 1
-        data = np.concatenate([data, spray_indicator])
-        feature_list.extend(["Spray"])
-        if feature_mode == 'label':
-            data_feature = np.zeros(data.shape)
-            for i in range(data.shape[0]):
-                if (data[i].dtype != np.dtype('float'))|(data[i].dtype != np.dtype('int'))|(data[i].dtype != np.dtype('double')):
-                    data_feature[i] = self.transform_categorical_numerical(i, data[i], mode=mode)
-                else:
-                    data_feature[i] = data[i]
-            data = data_feature
-        return data.transpose(), feature_list
 
     def transform_categorical_numerical(self, ind, xind, mode='train'):
         if mode == 'train':
@@ -562,9 +557,10 @@ class WNV:
     def predict(self, x):
         return self._model.predict(x)
 
-
     def evaluation(self):
-        train_x, y_true, feature_list = self.feature_extraction()
+        train_file_name = self._input_dir + '/train.csv'
+        train_x, y_true, feature_list = self.feature_extraction(mode='test', input_file_name=train_file_name)
+        y_true = load_pd_df(train_file_name)[self._target_col]
         y_pred = self._model.predict(train_x)
         cfm = confusion_matrix(y_true=y_true, y_pred=y_pred)
 
