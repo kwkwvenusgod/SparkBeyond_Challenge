@@ -188,6 +188,20 @@ def process_spray_data(input_data, spray_data):
     return input_data, feature_list
 
 
+def transfer_list(input_list):
+    n_samples = len(input_list)
+    n_features = len(input_list[0])
+    res = np.zeros((n_features,n_samples))
+
+    for i in range(n_samples):
+        tmp = np.asarray(input_list[i])
+        if tmp.dtype != 'object':
+            res[:,i] = tmp
+        else:
+            print tmp
+    return res
+
+
 class WNV:
     def __init__(self, input_dir, train_data_file, target_col,
                  model_type='GradientBoostingRegressor',
@@ -196,7 +210,7 @@ class WNV:
                            "subsample": 1, "verbose": 50}, test_metric='normalized_weighted_gini', na_fill_value=-20000,
                  silent=False, skip_mapping=False, load_model=None, train_filter=None, metric_type='auto',
                  load_type='fit_more',
-                 bootstrap=0, bootstrap_seed=None, weight_col=None, del_cols=[]):
+                 bootstrap=0, bootstrap_seed=None, weight_col=None, del_cols=[], feature_mode='label'):
         self._input_dir = input_dir
         self._train_data_file = train_data_file
         self._target_col = target_col
@@ -222,6 +236,7 @@ class WNV:
         self._data_balance = False
         self._feature_mapping_dict = {}
         self._feature_transform_ = None
+        self._feature_mode = feature_mode
 
     def staged_pred_proba(self, x):
         for pred in self._model.staged_predict_proba(x):
@@ -376,7 +391,7 @@ class WNV:
             if model is None:
                 if self._data_balance is True:
                     self._fit_args.update({"class_weight": "balanced"})
-                model = sklearn.svm.SVC(self._fit_args)
+                model = sklearn.svm.SVC(**self._fit_args)
                 model.fit(X=train_x, y=train_y)
                 self._model = model
             self._predict = lambda (fitted_model, pred_x): self.pred_proba(x=pred_x)
@@ -480,7 +495,8 @@ class WNV:
         else:
             print("The chosen algo does not process feature importance function")
 
-    def feature_extraction(self,mode="train", feature_mode='label', input_file_name=None):
+    def feature_extraction(self,mode="train", input_file_name=None):
+        feature_mode = self._feature_mode
         weather_data = load_pd_df(self._input_dir + '/weather.csv')
         weather_data = weather_data.loc[weather_data['Station'] == 1]
         spray_data = load_pd_df(self._input_dir + '/spray.csv')[["Date", "Latitude", "Longitude"]].drop_duplicates()
@@ -497,9 +513,24 @@ class WNV:
             train_data_proc, feature_list = process_spray_data(train_weather_data, spray_data)
             self._features = feature_list
             x = copy.deepcopy(train_data_proc)
-            if feature_mode == 'onehot':
-                x = self.transform_categorical_onehot(train_data_proc, all_data=all_data_proc)
-                y = train_data[self._target_col].values
+            if feature_mode == 'one_hot':
+                for col in x.columns:
+                    if all_data_proc[col].dtype == np.dtype('object'):
+                        mapping_dataframe = pd.get_dummies(all_data_proc[col].drop_duplicates(),dummy_na=True)
+                        self._feature_mapping_dict.update({col:mapping_dataframe})
+                        x[col] = pd.Series(x[col].map(lambda t: map(float,mapping_dataframe[t].values)), index=x.index)
+                    else:
+                        x[col] = x[col].fillna(self._na_fill_value)
+                feature_x = transfer_list(x[x.columns.values[0]].values)
+                for i in range(1,len(x.columns.values)):
+                    if x.columns.values[i] in self._feature_mapping_dict.keys():
+                        tmp = transfer_list(x[x.columns.values[i]].values)
+                        feature_x = np.concatenate((feature_x, tmp))
+                    else:
+                        tmp = np.reshape(x[x.columns.values[i]].values,(1,len(x)))
+                        feature_x = np.concatenate((feature_x, tmp))
+
+                x = feature_x.transpose()
             elif feature_mode == 'label':
                 mappings = dict()
                 if mappings is not None:
@@ -511,13 +542,13 @@ class WNV:
                         else:
                             x[col] = x[col].fillna(self._na_fill_value)
                 self._feature_mapping_dict = mappings
-                y = train_data[self._target_col].values
+            y = train_data[self._target_col].values
         elif (mode == 'test') & (input_file_name is not None):
             input_data = load_pd_df(input_file_name)
             input_data = input_data.merge(weather_data,on='Date',how='left')
             input_data_proc, feature_list = process_spray_data(input_data, spray_data)
             x = copy.deepcopy(input_data_proc)
-            if feature_mode == 'onehot':
+            if feature_mode == 'one_hot':
                 x = self.transform_categorical_onehot(input_data_proc)
                 y = []
             elif feature_mode == 'label':
