@@ -5,7 +5,7 @@
   "test_metric":"normalized_weighted_gini",
   "weight_col":null,
   "metric_type":"auto",
-  "model_type":"RNN",
+  "model_type":"LSTM",
   "model_file":"../west_nile/input/train.csv/output/model.pickle",
   "na_fill_value":-20000,
   "skip_mapping":false,

@@ -6,9 +6,8 @@ from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.metrics import confusion_matrix
 from sklearn.linear_model import LogisticRegression
 from sklearn import preprocessing
-from keras.callbacks import EarlyStopping
 from keras.models import Sequential
-from keras.layers import Dense, Merge, regularizers, LSTM
+from keras.layers import Dense, Merge, regularizers, LSTM, TimeDistributed
 from keras.layers.embeddings import Embedding
 from keras.layers import Dropout
 from keras.layers import Flatten
@@ -217,8 +216,6 @@ def process_spray_data(input_data, spray_data):
     feature_list.append('Spray')
 
     # more features
-
-
     return input_data, feature_list
 
 
@@ -256,6 +253,8 @@ class WNV:
         self._feature_mapping_dict = {}
         self._feature_transform_ = None
         self._feature_mode = feature_mode
+        self._feature_size = []
+        self._batch_size = 32
 
     def staged_pred_proba(self, x):
         for pred in self._model.staged_predict_proba(x):
@@ -281,59 +280,87 @@ class WNV:
         return to_2dim(self._model.predict(X=x))
 
     def generator(self, train_x, train_y, indices_list, max_len):
-        step = 1000
-        n_step = int(train_x.shape[0]/step) +1
+        n_step = int(train_x.shape[0]/self._batch_size) +1
+        flag = False
+        for i in range(n_step):
+            feature_train = np.zeros((self._batch_size, train_x.shape[1], max_len))
+            y_train_generator = np.zeros((self._batch_size,1))
+
+            for j in range(self._batch_size):
+                feature_tmp = np.zeros((train_x.shape[1], max_len))
+                if i * self._batch_size + j < train_x.shape[0]:
+                    ind = indices_list[i * self._batch_size + j]
+                    feat_len = len(ind)
+                    start = max_len - feat_len
+                    feature_tmp[:, start:] = train_x[ind, :].transpose()
+                    y_train_generator[j,0]=train_y[i * self._batch_size + j]
+                    feature_train[j] = feature_tmp
+                else:
+                    flag = True
+                    break
+            if flag:
+                feature_train = feature_train[i * self._batch_size:train_x.shape[0]]
+                y_train_generator = train_y[i * self._batch_size:train_x.shape[0],0]
+            feature_train = np.reshape(feature_train,(self._batch_size,1,train_x.shape[1],max_len,1))
+            yield feature_train,y_train_generator
+
+    def feature_generator(self,train_x,  indices_list, max_len):
+        step = 32
+        n_step = int(train_x.shape[0] / step) + 1
+        flag = False
         for i in range(n_step):
             feature_train = np.zeros((step, train_x.shape[1], max_len))
-            y_train_generator = []
-
             for j in range(step):
                 feature_tmp = np.zeros((train_x.shape[1], max_len))
                 if i * step + j < train_x.shape[0]:
                     ind = indices_list[i * step + j]
                     feat_len = len(ind)
-                    start = max_len - feat_len
-                    feature_tmp[:, start:] = train_x[ind, :]
-                    y_train_generator.append(train_y[i * step + j])
-                    feature_train[j] = feature_tmp
+                    if feat_len>max_len:
+                        ind = ind[0:max_len]
+                        feature_tmp[:, start:] = train_x[ind, :].transpose()
+                        feature_train[j] = feature_tmp
+                    else:
+                        feat_len = len(ind)
+                        start = max_len - feat_len
+                        feature_tmp[:, start:] = train_x[ind, :].transpose()
+                        feature_train[j] = feature_tmp
                 else:
+                    flag = True
+                    break
+            if flag:
+                feature_train = feature_train[i * step:train_x.shape[0]]
+            yield feature_train
 
+    def process_date_list(self, date_list):
+        all_dates = date_list
+        time_period = 5
+        indices = []
+        max_len = 0
+        for select_data in all_dates:
+            tmp_date = select_data - datetime.timedelta(days=time_period)
+            ind = np.where((all_dates > tmp_date) & (all_dates <= select_data))[0]
+            if len(ind) > max_len:
+                max_len = len(ind)
+            indices.append(ind)
 
-        yield feature_train,y_train_generator
-
-
-
-
+        return indices, max_len
 
     def train(self):
         start = timeit.default_timer()
         train_x, train_y, feature_list = self.feature_extraction()
+        self._feature_size = [train_x.shape[1],1]
         self._features = feature_list
-        if (self._model_type == "RNN")|(self._model_type == "CNN"):
-            train_data = load_pd_df(self._input_dir + '/train.csv')
-            all_dates = train_data['Date'].map(lambda x:datetime.datetime.strptime(x, '%Y-%m-%d'))
-            time_period = 5
-            indices = []
-            max_len = 0
-            for select_data in all_dates:
-                tmp_date = select_data - datetime.timedelta(days=time_period)
-                ind = np.where((all_dates>tmp_date)&(all_dates<=select_data))[0]
-                if len(ind) > max_len:
-                    max_len = len(ind)
-                indices.append(ind)
-
-            nn_features = np.zeros((train_x.shape[0],train_x.shape[1] ,max_len))
-            for i in range(train_x.shape[0]):
-                tmp_feature = np.zeros((train_x.shape[1] ,max_len))
-                ind = indices[i]
-                feat_len = len(ind)
-                start = max_len - feat_len
-                tmp_feature[:,start:] = train_x[ind,:]
-                nn_features[i] = tmp_feature
-            train_x = nn_features
 
 
-
+            # nn_features = np.zeros((train_x.shape[0],train_x.shape[1] ,max_len))
+            # for i in range(train_x.shape[0]):
+            #     tmp_feature = np.zeros((train_x.shape[1] ,max_len))
+            #     ind = indices[i]
+            #     feat_len = len(ind)
+            #     start = max_len - feat_len
+            #     tmp_feature[:,start:] = train_x[ind,:]
+            #     nn_features[i] = tmp_feature
+            # train_x = nn_features
 
         if not self._silent:
             print "Train has %d instances " % (len(train_x))
@@ -467,6 +494,11 @@ class WNV:
             self._staged_predict = lambda (fitted_model, pred_x): [self._predict((fitted_model, pred_x))]
         elif self._model_type == "CNN":
             if model is None:
+                train_data = load_pd_df(self._input_dir + '/train.csv')
+                indices, max_len = self.process_date_list(
+                    train_data['Date'].map(lambda x: datetime.datetime.strptime(x, '%Y-%m-%d')))
+                self._feature_size = [train_x.shape[1], max_len]
+
                 NB_FILTER = [64, 128]
                 NB_Size = [4, 3, 3]
                 FULLY_CONNECTED_UNIT = 256
@@ -483,21 +515,28 @@ class WNV:
                 model.add(Dense(2, activation='softmax'))
                 model.compile(loss='categorical_crossentropy', optimizer=Adamax(), metrics=['accuracy'])
                 model.fit(train_x, train_y, batch_size=16, epochs=50, verbose=1)
-            elif self._model_type == "LSTM":
-                if model is None:
-                    top_samples = 5000
-                    embedding_vecor_length = 128
-                    max_review_length = 500
-                    model = Sequential()
-                    model.add(Embedding(top_samples, embedding_vecor_length, input_length=max_review_length))
-                    model.add(Conv1D(filters=64, kernel_size=3, padding='same', activation='relu'))
-                    model.add(MaxPooling1D(pool_size=2))
-                    model.add(LSTM(units=100, dropout=0.3))
-                    model.add(Dense(1, activation='sigmoid'))
-                    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+        elif self._model_type == "LSTM":
+            if model is None:
+                train_data = load_pd_df(self._input_dir + '/train.csv')
+                indices, max_len = self.process_date_list(
+                    train_data['Date'].map(lambda x: datetime.datetime.strptime(x, '%Y-%m-%d')))
+                self._feature_size = [train_x.shape[1], max_len]
 
-                    model.fit(train_x, train_y, epochs=5, batch_size=32)
-                    model.fit_generator()
+                class_weight = {1: n_samples / (len(counts) * counts[1]), 0: n_samples / (len(counts) * counts[1])}
+                model = Sequential()
+                # define CNN model
+                model.add(TimeDistributed(Conv2D(filters=64, kernel_size=(train_x.shape[1],4),padding='same', activation='relu'),
+                                          input_shape=(None,self._feature_size[0],self._feature_size[1],1)))
+                model.add(TimeDistributed(MaxPooling2D((2,2))))
+                model.add(TimeDistributed(Flatten()))
+                # define LSTM model
+                model.add(LSTM(units=100, dropout=0.3))
+                model.add(Dense(1, activation='sigmoid'))
+                model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+                # model.fit(train_x, train_y, epochs=5, batch_size=32)
+                print model.summary()
+                model.fit_generator(generator=self.generator(train_x, train_y, indices, max_len),
+                                    epochs=20, class_weight=class_weight, steps_per_epoch=16)
 
         elif self._model_type == "Pipeline":
             if model is None:
@@ -734,14 +773,18 @@ class WNV:
             self._feature_transform_ = onehot
         return x_new
 
-    def predict(self, x):
-        return self._model.predict(x)
+    def predict(self, x, date_indices=None):
+        if (self._model_type == 'LSTM')&(self._model_type == 'CNN'):
+            y_pred = self._model.predict_generator(generator=self.feature_generator(x, date_indices,self._feature_size[1]))
+        else:
+            y_pred = self._model.predict(x)
+        return y_pred
 
     def evaluation(self):
         train_file_name = self._input_dir + '/train.csv'
         train_x, y_true, feature_list = self.feature_extraction(mode='eval')
         y_true = load_pd_df(train_file_name)[self._target_col]
-        y_pred = self._model.predict(train_x)
+        y_pred = self.predict(train_x,load_pd_df(train_file_name))
         cfm = confusion_matrix(y_true=y_true, y_pred=y_pred)
 
         print cfm

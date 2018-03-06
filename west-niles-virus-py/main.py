@@ -38,7 +38,8 @@ if __name__ == "__main__":
     numMosqs = test_origin.groupby(group_features)['Id'].transform("count")
     test_origin['NumMosquitos'] = numMosqs
     testx,testy,featurelist = wnv.feature_extraction(mode='test', input_test=test_origin)
-    y_test_pred = wnv.predict(testx)
+    date_indices = wnv.process_date_list(test_origin['Date'])
+    y_test_pred = wnv.predict(testx, date_indices=date_indices)
 
     test_origin['WnvPresent'] = pd.Series(y_test_pred, index=test_origin.index)
 
