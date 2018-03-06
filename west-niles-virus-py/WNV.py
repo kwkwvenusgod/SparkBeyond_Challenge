@@ -310,19 +310,18 @@ class WNV:
             yield feature_train,y_train_generator
 
     def feature_generator(self,train_x,  indices_list, max_len):
-        step = 32
-        n_step = int(train_x.shape[0] / step) + 1
+        n_step = int(train_x.shape[0] / self._batch_size) + 1
         flag = False
         for i in range(n_step):
-            feature_train = np.zeros((step, train_x.shape[1], max_len))
-            for j in range(step):
+            feature_train = np.zeros((self._batch_size, train_x.shape[1], max_len))
+            for j in range(self._batch_size):
                 feature_tmp = np.zeros((train_x.shape[1], max_len))
-                if i * step + j < train_x.shape[0]:
-                    ind = indices_list[i * step + j]
+                if i * self._batch_size + j < train_x.shape[0]:
+                    ind = indices_list[i * self._batch_size + j]
                     feat_len = len(ind)
-                    if feat_len>max_len:
+                    if feat_len > max_len:
                         ind = ind[0:max_len]
-                        feature_tmp[:, start:] = train_x[ind, :].transpose()
+                        feature_tmp = train_x[ind, :].transpose()
                         feature_train[j] = feature_tmp
                     else:
                         feat_len = len(ind)
@@ -333,8 +332,8 @@ class WNV:
                     flag = True
                     break
             if flag:
-                feature_train = feature_train[i * step:train_x.shape[0]]
-            yield feature_train
+                feature_train = feature_train[i * self._batch_size:train_x.shape[0]]
+            yield np.reshape(feature_train,(self._batch_size,1,train_x.shape[1],max_len,1))
 
     def process_date_list(self, date_list):
         all_dates = date_list
