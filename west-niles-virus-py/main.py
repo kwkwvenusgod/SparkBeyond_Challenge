@@ -41,8 +41,6 @@ if __name__ == "__main__":
     testx,testy,featurelist = wnv.feature_extraction(mode='test', input_test=test_origin)
     y_test_pred = wnv.predict(testx)
 
-
-    test_origin.groupby('Date').count()
     test_origin['WnvPresent'] = pd.Series(y_test_pred, index=test_origin.index)
 
     test_origin[['Id','WnvPresent']].to_csv('sampleSubmission.csv',index=False)
