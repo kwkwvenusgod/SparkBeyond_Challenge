@@ -6,6 +6,15 @@ from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.metrics import confusion_matrix
 from sklearn.linear_model import LogisticRegression
 from sklearn import preprocessing
+from keras.callbacks import EarlyStopping
+from keras.models import Sequential
+from keras.layers import Dense, Merge, regularizers, LSTM
+from keras.layers import Dropout
+from keras.layers import Flatten
+from keras.constraints import maxnorm
+from keras.optimizers import Adamax
+from keras.layers.convolutional import Conv2D
+from keras.layers.convolutional import MaxPooling2D
 import matplotlib.pyplot as plt
 import sklearn.metrics as sk_metrics
 import custom_metrics
@@ -202,6 +211,7 @@ def process_spray_data(input_data, spray_data):
 
     total_mosq = np.sum(input_data['NumMosquitos'].fillna(0).values)
     perc_mosq = np.asarray(input_data['NumMosquitos'].fillna(0).values) / total_mosq
+    perc_mosq = perc_mosq/np.max(perc_mosq)
     input_data['NumMosquitos'] = pd.Series(perc_mosq, index=input_data.index)
 
     input_data['Spray'] = pd.Series(list(spray_indicator), index=input_data.index)
@@ -403,6 +413,27 @@ class WNV:
                 self._model = model
             self._predict = lambda (fitted_model, pred_x): self.pred_proba(x=pred_x)
             self._staged_predict = lambda (fitted_model, pred_x): [self._predict((fitted_model, pred_x))]
+        elif self._model_type == "CNN":
+            if model is None:
+                NB_FILTER = [64, 128]
+                NB_Size = [4,3,3]
+                FULLY_CONNECTED_UNIT = 256
+                model = Sequential()
+                model.add(Conv2D(NB_FILTER[0], (train_x[1], NB_Size[0]), input_shape=train_x.shape, border_mode='valid', activation='relu'))
+                model.add(MaxPooling2D(pool_size=(1,3)))
+                model.add(
+                    Conv2D(NB_FILTER[1], (1, NB_Size[1]),border_mode='valid'))
+                model.add(MaxPooling2D(pool_size=(1, 3)))
+                model.add(Flatten())
+                model.add(Dense(FULLY_CONNECTED_UNIT, activation='relu', W_constraint=maxnorm(3), kernel_regularizer=regularizers.l2(0.01)))
+                model.add(Dense(2, activation='softmax'))
+                model.compile(loss='categorical_crossentropy', optimizer=Adamax(), metrics=['accuracy'])
+                model.fit(train_x,train_y,batch_size=16, epochs=50, verbose=1)
+            elif self._model_type == "LSTM":
+                if model is None:
+                    model = Sequential()
+                    model.add(LSTM(units=100, dropout=0.3))
+
 
         elif self._model_type == "Pipeline":
             if model is None:
@@ -511,6 +542,7 @@ class WNV:
 
         if mode == 'train':
             train_data = load_pd_df(self._input_dir + '/train.csv')
+            train_data = train_data.sort(["Date", "Latitude","Longitude"], ascending=[1,1,1])
             test_data = load_pd_df(self._input_dir + '/test.csv')
             train_weather_data = train_data.merge(weather_data, on='Date', how='left')
             all_data = train_data.append(test_data)
