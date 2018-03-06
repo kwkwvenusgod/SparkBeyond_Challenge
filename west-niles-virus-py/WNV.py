@@ -536,7 +536,7 @@ class WNV:
                 # model.fit(train_x, train_y, epochs=5, batch_size=32)
                 print model.summary()
                 model.fit_generator(generator=self.generator(train_x, train_y, indices, max_len),
-                                    epochs=20, class_weight=class_weight, steps_per_epoch=16)
+                                    epochs=20, class_weight=class_weight, steps_per_epoch=1)
 
         elif self._model_type == "Pipeline":
             if model is None:
