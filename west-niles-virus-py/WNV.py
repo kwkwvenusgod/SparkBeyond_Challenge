@@ -7,7 +7,7 @@ from sklearn.metrics import confusion_matrix
 from sklearn.linear_model import LogisticRegression
 from sklearn import preprocessing
 from keras.models import Sequential
-from keras.layers import Dense, Merge, regularizers, LSTM, TimeDistributed
+from keras.layers import Dense, Merge, regularizers, LSTM, TimeDistributed, GlobalAveragePooling2D
 from keras.layers.embeddings import Embedding
 from keras.layers import Dropout
 from keras.layers import Flatten
@@ -527,8 +527,8 @@ class WNV:
                 # define CNN model
                 model.add(TimeDistributed(Conv2D(filters=64, kernel_size=(train_x.shape[1],4),padding='same', activation='relu'),
                                           input_shape=(None,self._feature_size[0],self._feature_size[1],1)))
-                model.add(TimeDistributed(MaxPooling2D((2,2))))
-                model.add(TimeDistributed(Flatten()))
+                model.add(TimeDistributed(MaxPooling2D((1,2))))
+                model.add(TimeDistributed(GlobalAveragePooling2D()))
                 # define LSTM model
                 model.add(LSTM(units=100, dropout=0.3))
                 model.add(Dense(1, activation='sigmoid'))
