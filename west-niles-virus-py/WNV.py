@@ -9,12 +9,13 @@ from sklearn import preprocessing
 from keras.callbacks import EarlyStopping
 from keras.models import Sequential
 from keras.layers import Dense, Merge, regularizers, LSTM
+from keras.layers.embeddings import Embedding
 from keras.layers import Dropout
 from keras.layers import Flatten
 from keras.constraints import maxnorm
 from keras.optimizers import Adamax
-from keras.layers.convolutional import Conv2D
-from keras.layers.convolutional import MaxPooling2D
+from keras.layers.convolutional import Conv2D, Conv1D
+from keras.layers.convolutional import MaxPooling2D, MaxPooling1D
 import matplotlib.pyplot as plt
 import sklearn.metrics as sk_metrics
 import custom_metrics
@@ -140,17 +141,15 @@ def process_date(date_list):
     return date
 
 
-
-
 def transfer_list(input_list):
     n_samples = len(input_list)
     n_features = len(input_list[0])
-    res = np.zeros((n_features,n_samples))
+    res = np.zeros((n_features, n_samples))
 
     for i in range(n_samples):
         tmp = np.asarray(input_list[i])
         if tmp.dtype != 'object':
-            res[:,i] = tmp
+            res[:, i] = tmp
         else:
             print tmp
     return res
@@ -211,11 +210,15 @@ def process_spray_data(input_data, spray_data):
 
     total_mosq = np.sum(input_data['NumMosquitos'].fillna(0).values)
     perc_mosq = np.asarray(input_data['NumMosquitos'].fillna(0).values) / total_mosq
-    perc_mosq = perc_mosq/np.max(perc_mosq)
+    perc_mosq = perc_mosq / np.max(perc_mosq)
     input_data['NumMosquitos'] = pd.Series(perc_mosq, index=input_data.index)
 
     input_data['Spray'] = pd.Series(list(spray_indicator), index=input_data.index)
     feature_list.append('Spray')
+
+    # more features
+
+
     return input_data, feature_list
 
 
@@ -227,7 +230,7 @@ class WNV:
                            "subsample": 1, "verbose": 50}, test_metric='normalized_weighted_gini', na_fill_value=-20000,
                  silent=False, skip_mapping=False, load_model=None, train_filter=None, metric_type='auto',
                  load_type='fit_more',
-                 bootstrap=0, bootstrap_seed=None, weight_col=None, del_cols=[], feature_mode='label'):
+                 bootstrap=0, bootstrap_seed=None, weight_col=None, feature_mode='label'):
         self._input_dir = input_dir
         self._train_data_file = train_data_file
         self._target_col = target_col
@@ -249,7 +252,6 @@ class WNV:
         self._staged_predict = None
         self._have_feat_importance = False
         self._predict = None
-        self._del_cols = del_cols
         self._data_balance = False
         self._feature_mapping_dict = {}
         self._feature_transform_ = None
@@ -278,11 +280,61 @@ class WNV:
     def continuous_predict(self, x):
         return to_2dim(self._model.predict(X=x))
 
+    def generator(self, train_x, train_y, indices_list, max_len):
+        step = 1000
+        n_step = int(train_x.shape[0]/step) +1
+        for i in range(n_step):
+            feature_train = np.zeros((step, train_x.shape[1], max_len))
+            y_train_generator = []
+
+            for j in range(step):
+                feature_tmp = np.zeros((train_x.shape[1], max_len))
+                if i * step + j < train_x.shape[0]:
+                    ind = indices_list[i * step + j]
+                    feat_len = len(ind)
+                    start = max_len - feat_len
+                    feature_tmp[:, start:] = train_x[ind, :]
+                    y_train_generator.append(train_y[i * step + j])
+                    feature_train[j] = feature_tmp
+                else:
+
+
+        yield feature_train,y_train_generator
+
+
+
+
+
     def train(self):
         start = timeit.default_timer()
-
         train_x, train_y, feature_list = self.feature_extraction()
         self._features = feature_list
+        if (self._model_type == "RNN")|(self._model_type == "CNN"):
+            train_data = load_pd_df(self._input_dir + '/train.csv')
+            all_dates = train_data['Date'].map(lambda x:datetime.datetime.strptime(x, '%Y-%m-%d'))
+            time_period = 5
+            indices = []
+            max_len = 0
+            for select_data in all_dates:
+                tmp_date = select_data - datetime.timedelta(days=time_period)
+                ind = np.where((all_dates>tmp_date)&(all_dates<=select_data))[0]
+                if len(ind) > max_len:
+                    max_len = len(ind)
+                indices.append(ind)
+
+            nn_features = np.zeros((train_x.shape[0],train_x.shape[1] ,max_len))
+            for i in range(train_x.shape[0]):
+                tmp_feature = np.zeros((train_x.shape[1] ,max_len))
+                ind = indices[i]
+                feat_len = len(ind)
+                start = max_len - feat_len
+                tmp_feature[:,start:] = train_x[ind,:]
+                nn_features[i] = tmp_feature
+            train_x = nn_features
+
+
+
+
         if not self._silent:
             print "Train has %d instances " % (len(train_x))
 
@@ -416,24 +468,36 @@ class WNV:
         elif self._model_type == "CNN":
             if model is None:
                 NB_FILTER = [64, 128]
-                NB_Size = [4,3,3]
+                NB_Size = [4, 3, 3]
                 FULLY_CONNECTED_UNIT = 256
                 model = Sequential()
-                model.add(Conv2D(NB_FILTER[0], (train_x[1], NB_Size[0]), input_shape=train_x.shape, border_mode='valid', activation='relu'))
-                model.add(MaxPooling2D(pool_size=(1,3)))
+                model.add(Conv2D(NB_FILTER[0], (train_x[1], NB_Size[0]), input_shape=train_x.shape, border_mode='valid',
+                                 activation='relu'))
+                model.add(MaxPooling2D(pool_size=(1, 3)))
                 model.add(
-                    Conv2D(NB_FILTER[1], (1, NB_Size[1]),border_mode='valid'))
+                    Conv2D(NB_FILTER[1], (1, NB_Size[1]), border_mode='valid'))
                 model.add(MaxPooling2D(pool_size=(1, 3)))
                 model.add(Flatten())
-                model.add(Dense(FULLY_CONNECTED_UNIT, activation='relu', W_constraint=maxnorm(3), kernel_regularizer=regularizers.l2(0.01)))
+                model.add(Dense(FULLY_CONNECTED_UNIT, activation='relu', W_constraint=maxnorm(3),
+                                kernel_regularizer=regularizers.l2(0.01)))
                 model.add(Dense(2, activation='softmax'))
                 model.compile(loss='categorical_crossentropy', optimizer=Adamax(), metrics=['accuracy'])
-                model.fit(train_x,train_y,batch_size=16, epochs=50, verbose=1)
+                model.fit(train_x, train_y, batch_size=16, epochs=50, verbose=1)
             elif self._model_type == "LSTM":
                 if model is None:
+                    top_samples = 5000
+                    embedding_vecor_length = 128
+                    max_review_length = 500
                     model = Sequential()
+                    model.add(Embedding(top_samples, embedding_vecor_length, input_length=max_review_length))
+                    model.add(Conv1D(filters=64, kernel_size=3, padding='same', activation='relu'))
+                    model.add(MaxPooling1D(pool_size=2))
                     model.add(LSTM(units=100, dropout=0.3))
+                    model.add(Dense(1, activation='sigmoid'))
+                    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
 
+                    model.fit(train_x, train_y, epochs=5, batch_size=32)
+                    model.fit_generator()
 
         elif self._model_type == "Pipeline":
             if model is None:
@@ -533,7 +597,7 @@ class WNV:
         else:
             print("The chosen algo does not process feature importance function")
 
-    def feature_extraction(self,mode="train", input_test=None):
+    def feature_extraction(self, mode="train", input_test=None):
         feature_mode = self._feature_mode
         weather_data = load_pd_df(self._input_dir + '/weather.csv')
         weather_data = weather_data.loc[weather_data['Station'] == 1]
@@ -542,7 +606,7 @@ class WNV:
 
         if mode == 'train':
             train_data = load_pd_df(self._input_dir + '/train.csv')
-            train_data = train_data.sort(["Date", "Latitude","Longitude"], ascending=[1,1,1])
+            train_data = train_data.sort_values(["Date", "Latitude", "Longitude"], ascending=[1, 1, 1])
             test_data = load_pd_df(self._input_dir + '/test.csv')
             train_weather_data = train_data.merge(weather_data, on='Date', how='left')
             all_data = train_data.append(test_data)
@@ -555,18 +619,18 @@ class WNV:
             if feature_mode == 'one_hot':
                 for col in x.columns:
                     if all_data_proc[col].dtype == np.dtype('object'):
-                        mapping_dataframe = pd.get_dummies(all_data_proc[col].drop_duplicates(),dummy_na=True)
-                        self._feature_mapping_dict.update({col:mapping_dataframe})
-                        x[col] = pd.Series(x[col].map(lambda t: map(float,mapping_dataframe[t].values)), index=x.index)
+                        mapping_dataframe = pd.get_dummies(all_data_proc[col].drop_duplicates(), dummy_na=True)
+                        self._feature_mapping_dict.update({col: mapping_dataframe})
+                        x[col] = pd.Series(x[col].map(lambda t: map(float, mapping_dataframe[t].values)), index=x.index)
                     else:
                         x[col] = x[col].fillna(self._na_fill_value)
                 feature_x = transfer_list(x[x.columns.values[0]].values)
-                for i in range(1,len(x.columns.values)):
+                for i in range(1, len(x.columns.values)):
                     if x.columns.values[i] in self._feature_mapping_dict.keys():
                         tmp = transfer_list(x[x.columns.values[i]].values)
                         feature_x = np.concatenate((feature_x, tmp))
                     else:
-                        tmp = np.reshape(x[x.columns.values[i]].values,(1,len(x)))
+                        tmp = np.reshape(x[x.columns.values[i]].values, (1, len(x)))
                         feature_x = np.concatenate((feature_x, tmp))
 
                 x = feature_x.transpose()
@@ -584,7 +648,7 @@ class WNV:
             y = train_data[self._target_col].values
         elif mode == 'eval':
             input_data = load_pd_df(self._input_dir + '/train.csv')
-            input_data = input_data.merge(weather_data,on='Date',how='left')
+            input_data = input_data.merge(weather_data, on='Date', how='left')
             input_data_proc, feature_list = process_spray_data(input_data, spray_data)
             x = copy.deepcopy(input_data_proc)
 
@@ -613,7 +677,7 @@ class WNV:
                     else:
                         x[col] = x[col].fillna(self._na_fill_value)
                 y = input_data[self._target_col]
-        elif (mode == 'test')&(input_test is not None):
+        elif (mode == 'test') & (input_test is not None):
             input_test = input_test.merge(weather_data, on='Date', how='left')
             input_data_proc, feature_list = process_spray_data(input_test, spray_data)
             x = copy.deepcopy(input_data_proc)
@@ -646,7 +710,7 @@ class WNV:
         else:
             sys.exit()
 
-        return x,y, feature_list
+        return x, y, feature_list
 
     def transform_categorical_numerical(self, ind, xind, mode='train'):
         if mode == 'train':

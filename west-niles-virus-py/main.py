@@ -24,7 +24,6 @@ if __name__ == "__main__":
               load_type=config['load_type'],
               bootstrap=config['bootstrap'],
               bootstrap_seed=config['bootstrap_seed'],
-              del_cols=config['del_cols'],
               feature_mode=config['feature_mode'])
 
     # wnv.basic_evaluation()

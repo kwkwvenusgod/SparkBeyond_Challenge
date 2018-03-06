@@ -5,7 +5,7 @@
   "test_metric":"normalized_weighted_gini",
   "weight_col":null,
   "metric_type":"auto",
-  "model_type":"SVC",
+  "model_type":"RNN",
   "model_file":"../west_nile/input/train.csv/output/model.pickle",
   "na_fill_value":-20000,
   "skip_mapping":false,
@@ -16,6 +16,5 @@
   "load_type":"fit_more",
   "bootstrap":0,
   "bootstrap_seed":null,
-  "del_cols":["NumMosquitos"],
   "feature_mode":"one_hot"
 }
