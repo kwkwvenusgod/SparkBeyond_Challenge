@@ -542,6 +542,7 @@ class WNV:
                 print model.summary()
                 model.fit_generator(generator=self.generator(train_x, train_y, indices, max_len),
                                     epochs=20, class_weight=class_weight, steps_per_epoch=1)
+                self._model = model
 
         elif self._model_type == "Pipeline":
             if model is None:
