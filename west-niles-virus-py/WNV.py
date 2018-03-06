@@ -779,7 +779,7 @@ class WNV:
         return x_new
 
     def predict(self, x, date_indices=None):
-        if (self._model_type == 'LSTM')&(self._model_type == 'CNN'):
+        if (self._model_type == 'LSTM')|(self._model_type == 'CNN'):
             y_pred = self._model.predict_generator(generator=self.feature_generator(x, date_indices,self._feature_size[1]))
         else:
             y_pred = self._model.predict(x)
@@ -789,7 +789,9 @@ class WNV:
         train_file_name = self._input_dir + '/train.csv'
         train_x, y_true, feature_list = self.feature_extraction(mode='eval')
         y_true = load_pd_df(train_file_name)[self._target_col]
-        y_pred = self.predict(train_x,load_pd_df(train_file_name))
+        date_list = load_pd_df(train_file_name)['Date'].map(lambda t: datetime.datetime.strptime(t, '%Y-%m-%d'))
+        date_indices = self.process_date_list(date_list)
+        y_pred = self.predict(train_x,date_indices=date_indices)
         cfm = confusion_matrix(y_true=y_true, y_pred=y_pred)
 
         print cfm
