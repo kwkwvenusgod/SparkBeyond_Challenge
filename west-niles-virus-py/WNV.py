@@ -781,7 +781,7 @@ class WNV:
 
     def predict(self, x, date_indices=None):
         if (self._model_type == 'LSTM')|(self._model_type == 'CNN'):
-            y_pred = self._model.predict_generator(generator=self.feature_generator(x, date_indices,self._feature_size[1]))
+            y_pred = self._model.predict_generator(generator=self.feature_generator(x, date_indices,self._feature_size[1]),step=1)
         else:
             y_pred = self._model.predict(x)
         return y_pred
