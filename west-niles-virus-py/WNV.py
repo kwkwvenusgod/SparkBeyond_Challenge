@@ -321,6 +321,7 @@ class WNV:
                     feat_len = len(ind)
                     if feat_len > max_len:
                         ind = ind[0:max_len]
+                        print ind
                         feature_tmp = train_x[ind, :].transpose()
                         feature_train[j] = feature_tmp
                     else:
