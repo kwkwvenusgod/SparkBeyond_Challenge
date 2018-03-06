@@ -135,7 +135,8 @@ def process_date(date_list):
     date = []
     for tmp in date_list:
         tmp = tmp.split('-')
-        tmp = tmp[1] + '-' + tmp[2]
+        week = str(int(tmp[2])/7)
+        tmp = tmp[1] + '-' + week
         date.append(tmp)
     return date
 
@@ -154,33 +155,38 @@ def transfer_list(input_list):
     return res
 
 
-def process_spray_data(input_data, spray_data):
-    feature_list = ["Date", "Species", "Longitude", "Latitude", "Trap", "Address", "Street", 'Tmax', 'Tmin',
-                    'DewPoint', "WetBulb", "Heat", "Cool", "Sunrise", "Sunset",
+def process_spray_data(input_data, spray_data, add_spray = False):
+    # feature_list = ["Date", "Species", "Longitude", "Latitude", "Trap", "Address", "Street", 'Tmax', 'Tmin',
+    #                 'DewPoint', "WetBulb", "Heat", "Cool", "Sunrise", "Sunset",
+    #                 "StnPressure", "SeaLevel", "ResultSpeed", "ResultDir", "AvgSpeed", "NumMosquitos"]
+    feature_list = ["Date", "Species", "Longitude", "Latitude", "Trap", 'Tmax', 'Tmin',
+                     'DewPoint', "WetBulb", "Heat", "Cool", "Sunrise", "Sunset",
                     "StnPressure", "SeaLevel", "ResultSpeed", "ResultDir", "AvgSpeed", "NumMosquitos"]
 
     input_data = input_data[feature_list]
+    if add_spray is True:
+        spray_indicator = np.zeros(len(input_data))
+        thres_date = 5
+        thres_area = 0.6
+        train_data_dates = input_data["Date"].drop_duplicates().tolist()
+        spray_la_long_list = list(spray_data[["Latitude", "Longitude"]].groupby(spray_data["Date"]))
+        train_data_la_long_list = list(input_data[["Latitude", "Longitude"]].groupby(input_data["Date"]))
+        for spray_la_long_date in spray_la_long_list:
+            spray_date_tmp_start = datetime.datetime.strptime(spray_la_long_date[0], '%Y-%m-%d')
+            spray_date_tmp_end = spray_date_tmp_start + datetime.timedelta(days=thres_date)
+            spray_location_tmp = spray_la_long_date[1].get_values()
 
-    spray_indicator = np.zeros(len(input_data))
-    thres_date = 5
-    thres_area = 0.6
-    train_data_dates = input_data["Date"].drop_duplicates().tolist()
-    spray_la_long_list = list(spray_data[["Latitude", "Longitude"]].groupby(spray_data["Date"]))
-    train_data_la_long_list = list(input_data[["Latitude", "Longitude"]].groupby(input_data["Date"]))
-    for spray_la_long_date in spray_la_long_list:
-        spray_date_tmp_start = datetime.datetime.strptime(spray_la_long_date[0], '%Y-%m-%d')
-        spray_date_tmp_end = spray_date_tmp_start + datetime.timedelta(days=thres_date)
-        spray_location_tmp = spray_la_long_date[1].get_values()
-
-        for i in range(len(train_data_dates)):
-            train_data_date = datetime.datetime.strptime(train_data_dates[i], '%Y-%m-%d')
-            if (train_data_date > spray_date_tmp_start) & (train_data_date <= spray_date_tmp_end):
-                train_location = train_data_la_long_list[i][1].get_values()
-                train_location_indices = train_data_la_long_list[i][1].axes[0].get_values()
-                distances = euclidean_distances(spray_location_tmp, train_location)
-                indices = np.unique(np.where(distances < thres_area)[1], return_index=False).astype(int)
-                indices = train_location_indices[indices].astype(int)
-                spray_indicator[indices] = 1
+            for i in range(len(train_data_dates)):
+                train_data_date = datetime.datetime.strptime(train_data_dates[i], '%Y-%m-%d')
+                if (train_data_date > spray_date_tmp_start) & (train_data_date <= spray_date_tmp_end):
+                    train_location = train_data_la_long_list[i][1].get_values()
+                    train_location_indices = train_data_la_long_list[i][1].axes[0].get_values()
+                    distances = euclidean_distances(spray_location_tmp, train_location)
+                    indices = np.unique(np.where(distances < thres_area)[1], return_index=False).astype(int)
+                    indices = train_location_indices[indices].astype(int)
+                    spray_indicator[indices] = 1
+        input_data['Spray'] = pd.Series(list(spray_indicator), index=input_data.index)
+        feature_list.append('Spray')
 
     input_data.loc[:, 'Date'] = process_date(input_data['Date'].values)
     input_data['StnPressure'].loc[input_data['StnPressure'] == 'M'] = float('NaN')
@@ -212,8 +218,7 @@ def process_spray_data(input_data, spray_data):
     perc_mosq = perc_mosq / np.max(perc_mosq)
     input_data['NumMosquitos'] = pd.Series(perc_mosq, index=input_data.index)
 
-    input_data['Spray'] = pd.Series(list(spray_indicator), index=input_data.index)
-    feature_list.append('Spray')
+
 
     # more features
     return input_data, feature_list
@@ -333,7 +338,7 @@ class WNV:
 
     def process_date_list(self, date_list):
         all_dates = date_list
-        time_period = 5
+        time_period = 3
         indices = []
         max_len = 0
         for select_data in all_dates:
