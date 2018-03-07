@@ -287,27 +287,28 @@ class WNV:
     def generator(self, train_x, train_y, indices_list, max_len):
         n_step = int(train_x.shape[0]/self._batch_size)
         flag = False
-        for i in range(n_step):
-            feature_train = np.zeros((self._batch_size, train_x.shape[1], max_len))
-            y_train_generator = np.zeros((self._batch_size,1))
+        while 1:
+            for i in range(n_step):
+                feature_train = np.zeros((self._batch_size, train_x.shape[1], max_len))
+                y_train_generator = np.zeros((self._batch_size, 1))
 
-            for j in range(self._batch_size):
-                feature_tmp = np.zeros((train_x.shape[1], max_len))
-                if i * self._batch_size + j < train_x.shape[0]:
-                    ind = indices_list[i * self._batch_size + j]
-                    feat_len = len(ind)
-                    start = max_len - feat_len
-                    feature_tmp[:, start:] = train_x[ind, :].transpose()
-                    y_train_generator[j,0]=train_y[i * self._batch_size + j]
-                    feature_train[j] = feature_tmp
-                else:
-                    flag = True
-                    break
-            if flag:
-                feature_train = feature_train[i * self._batch_size:train_x.shape[0]]
-                y_train_generator = train_y[i * self._batch_size:train_x.shape[0]]
-            feature_train = np.reshape(feature_train,(self._batch_size,1,train_x.shape[1],max_len,1))
-            yield feature_train,y_train_generator
+                for j in range(self._batch_size):
+                    feature_tmp = np.zeros((train_x.shape[1], max_len))
+                    if i * self._batch_size + j < train_x.shape[0]:
+                        ind = indices_list[i * self._batch_size + j]
+                        feat_len = len(ind)
+                        start = max_len - feat_len
+                        feature_tmp[:, start:] = train_x[ind, :].transpose()
+                        y_train_generator[j, 0] = train_y[i * self._batch_size + j]
+                        feature_train[j] = feature_tmp
+                    else:
+                        flag = True
+                        break
+                if flag:
+                    feature_train = feature_train[i * self._batch_size:train_x.shape[0]]
+                    y_train_generator = train_y[i * self._batch_size:train_x.shape[0]]
+                feature_train = np.reshape(feature_train, (self._batch_size, 1, train_x.shape[1], max_len, 1))
+                yield feature_train, y_train_generator
 
     def feature_generator(self,train_x,  indices_list, max_len):
         n_step = int(train_x.shape[0] / self._batch_size) + 1
