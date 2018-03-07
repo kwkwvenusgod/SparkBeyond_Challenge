@@ -541,7 +541,7 @@ class WNV:
                 # model.fit(train_x, train_y, epochs=5, batch_size=32)
                 print model.summary()
                 model.fit_generator(generator=self.generator(train_x, train_y, indices, max_len),
-                                    epochs=1, class_weight=class_weight, steps_per_epoch=3)
+                                    epochs=20, class_weight=class_weight, steps_per_epoch=train_x.shape[0]/self._batch_size)
                 self._model = model
 
         elif self._model_type == "Pipeline":
@@ -781,7 +781,7 @@ class WNV:
 
     def predict(self, x, date_indices=None):
         if (self._model_type == 'LSTM')|(self._model_type == 'CNN'):
-            y_pred = self._model.predict_generator(generator=self.feature_generator(x, date_indices,self._feature_size[1]),steps=x.shape[0])
+            y_pred = self._model.predict_generator(generator=self.feature_generator(x, date_indices,self._feature_size[1]),steps=x.shape[0]/self._batch_size)
         else:
             y_pred = self._model.predict(x)
         return y_pred
