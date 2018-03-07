@@ -285,7 +285,7 @@ class WNV:
         return to_2dim(self._model.predict(X=x))
 
     def generator(self, train_x, train_y, indices_list, max_len):
-        n_step = int(train_x.shape[0]/self._batch_size) +1
+        n_step = int(train_x.shape[0]/self._batch_size)
         flag = False
         for i in range(n_step):
             feature_train = np.zeros((self._batch_size, train_x.shape[1], max_len))
@@ -305,7 +305,7 @@ class WNV:
                     break
             if flag:
                 feature_train = feature_train[i * self._batch_size:train_x.shape[0]]
-                y_train_generator = train_y[i * self._batch_size:train_x.shape[0],0]
+                y_train_generator = train_y[i * self._batch_size:train_x.shape[0]]
             feature_train = np.reshape(feature_train,(self._batch_size,1,train_x.shape[1],max_len,1))
             yield feature_train,y_train_generator
 
@@ -541,7 +541,7 @@ class WNV:
                 # model.fit(train_x, train_y, epochs=5, batch_size=32)
                 print model.summary()
                 model.fit_generator(generator=self.generator(train_x, train_y, indices, max_len),
-                                    epochs=20, class_weight=class_weight, steps_per_epoch=train_x.shape[0])
+                                    epochs=1, class_weight=class_weight, steps_per_epoch=3)
                 self._model = model
 
         elif self._model_type == "Pipeline":
