@@ -1,3 +1,5 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 import simplejson
 import pandas as pd
 import utils, datetime
