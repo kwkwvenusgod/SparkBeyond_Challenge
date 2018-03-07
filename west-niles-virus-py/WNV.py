@@ -1,3 +1,4 @@
+from __future__ import division
 import sklearn
 import datetime, sys
 from sklearn.ensemble import GradientBoostingRegressor, GradientBoostingClassifier, \
@@ -528,7 +529,7 @@ class WNV:
                     train_data['Date'].map(lambda x: datetime.datetime.strptime(x, '%Y-%m-%d')))
                 self._feature_size = [train_x.shape[1], max_len]
 
-                class_weight = {1: n_samples / (len(counts) * counts[1]), 0: n_samples / (len(counts) * counts[1])}
+                class_weight = {1: n_samples / (len(counts) * counts[1]), 0: n_samples / (len(counts) * counts[0])}
                 model = Sequential()
                 # define CNN model
                 model.add(TimeDistributed(Conv2D(filters=64, kernel_size=(train_x.shape[1],4),padding='same', activation='relu'),
