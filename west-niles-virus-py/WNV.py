@@ -259,7 +259,7 @@ class WNV:
         self._feature_transform_ = None
         self._feature_mode = feature_mode
         self._feature_size = []
-        self._batch_size = 32
+        self._batch_size = 34
 
     def staged_pred_proba(self, x):
         for pred in self._model.staged_predict_proba(x):
@@ -541,7 +541,7 @@ class WNV:
                 # model.fit(train_x, train_y, epochs=5, batch_size=32)
                 print model.summary()
                 model.fit_generator(generator=self.generator(train_x, train_y, indices, max_len),
-                                    epochs=20, class_weight=class_weight, steps_per_epoch=1)
+                                    epochs=20, class_weight=class_weight, steps_per_epoch=train_x.shape[0])
                 self._model = model
 
         elif self._model_type == "Pipeline":
@@ -781,7 +781,7 @@ class WNV:
 
     def predict(self, x, date_indices=None):
         if (self._model_type == 'LSTM')|(self._model_type == 'CNN'):
-            y_pred = self._model.predict_generator(generator=self.feature_generator(x, date_indices,self._feature_size[1]),steps=1)
+            y_pred = self._model.predict_generator(generator=self.feature_generator(x, date_indices,self._feature_size[1]),steps=x.shape[0])
         else:
             y_pred = self._model.predict(x)
         return y_pred
@@ -791,7 +791,7 @@ class WNV:
         train_x, y_true, feature_list = self.feature_extraction(mode='eval')
         y_true = load_pd_df(train_file_name)[self._target_col]
         date_list = load_pd_df(train_file_name)['Date'].map(lambda t: datetime.datetime.strptime(t, '%Y-%m-%d'))
-        date_indices = self.process_date_list(date_list)
+        date_indices, max_len = self.process_date_list(date_list)
         y_pred = self.predict(train_x,date_indices=date_indices)
         cfm = confusion_matrix(y_true=y_true, y_pred=y_pred)
 
