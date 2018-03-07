@@ -311,7 +311,7 @@ class WNV:
                 yield feature_train, y_train_generator
 
     def feature_generator(self,train_x,  indices_list, max_len):
-        n_step = int(train_x.shape[0] / self._batch_size) + 1
+        n_step = int(train_x.shape[0] / self._batch_size)
         flag = False
         for i in range(n_step):
             feature_train = np.zeros((self._batch_size, train_x.shape[1], max_len))
