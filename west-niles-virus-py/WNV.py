@@ -1,5 +1,5 @@
 import sklearn
-import datetime, sys
+import datetime, sys,os
 from sklearn.ensemble import GradientBoostingRegressor, GradientBoostingClassifier, \
     RandomForestRegressor, RandomForestClassifier, ExtraTreesClassifier, ExtraTreesRegressor
 from sklearn.metrics.pairwise import euclidean_distances
@@ -15,6 +15,7 @@ from keras.constraints import maxnorm
 from keras.optimizers import Adamax
 from keras.layers.convolutional import Conv2D, Conv1D
 from keras.layers.convolutional import MaxPooling2D, MaxPooling1D
+from CNN_LSTM import CNN_LSTM
 import matplotlib.pyplot as plt
 import sklearn.metrics as sk_metrics
 import custom_metrics
@@ -23,7 +24,7 @@ import timeit
 import numpy as np
 import ml_metrics
 import cPickle as Pickle
-import itertools
+import itertools, pickle
 import math
 import random
 from sklearn.pipeline import Pipeline
@@ -260,6 +261,7 @@ class WNV:
         self._feature_mode = feature_mode
         self._feature_size = []
         self._batch_size = 34
+        self._model_path = None
 
     def staged_pred_proba(self, x):
         for pred in self._model.staged_predict_proba(x):
@@ -351,22 +353,37 @@ class WNV:
 
         return indices, max_len
 
+    def save_model(self, dirPath='.'):
+        if self._model_type in  ['LSTM', 'CNN']:
+            if not os.path.exists(dirPath):
+                os.makedirs(dirPath)
+            self._model_path = dirPath + '/'+ self._model_type + '.h5'
+            self._model.save(self._model_path)
+            self._model = None
+            wvn_model_path = dirPath + '/' + 'wvn.pickle'
+            with open(wvn_model_path, 'wb') as wvn_model:
+                tmp = self.__dict__
+                pickle.dump(tmp, wvn_model, pickle.HIGHEST_PROTOCOL)
+        else:
+            wvn_model_path = dirPath + '/' + 'wvn.pickle'
+            with open(wvn_model_path, 'wb') as wvn_model:
+                pickle.dump(self, wvn_model, pickle.HIGHEST_PROTOCOL)
+
+    def load_real_model(self, file_path):
+        if self._model_type == 'LSTM':
+            model = CNN_LSTM((self._feature_size[0], 4), (None, self._feature_size[0], self._feature_size[1], 1))
+            model.load(file_path)
+            model.load(file_path)
+            self._model = model
+        else:
+            print("Only keras model need the method")
+
     def train(self):
         start = timeit.default_timer()
         train_x, train_y, feature_list = self.feature_extraction()
         self._feature_size = [train_x.shape[1],1]
         self._features = feature_list
 
-
-            # nn_features = np.zeros((train_x.shape[0],train_x.shape[1] ,max_len))
-            # for i in range(train_x.shape[0]):
-            #     tmp_feature = np.zeros((train_x.shape[1] ,max_len))
-            #     ind = indices[i]
-            #     feat_len = len(ind)
-            #     start = max_len - feat_len
-            #     tmp_feature[:,start:] = train_x[ind,:]
-            #     nn_features[i] = tmp_feature
-            # train_x = nn_features
 
         if not self._silent:
             print "Train has %d instances " % (len(train_x))
@@ -396,9 +413,6 @@ class WNV:
             train_x.reset_index()
             train_y = train_y.iloc[bootstrap_ix]
             train_y.reset_index()
-
-        self._predict = lambda (fitted_model, pred_x): fitted_model.predict(pred_x)
-        self._staged_predict = lambda (fitted_model, pred_x): [self._predict((fitted_model, pred_x))]
 
         model = None
 
@@ -509,7 +523,7 @@ class WNV:
                 NB_Size = [4, 3, 3]
                 FULLY_CONNECTED_UNIT = 256
                 model = Sequential()
-                model.add(Conv2D(NB_FILTER[0], (train_x[1], NB_Size[0]), input_shape=train_x.shape, border_mode='valid',
+                model.add(Conv2D(NB_FILTER[0], (train_x.shape[1], NB_Size[0]), input_shape=train_x.shape, border_mode='valid',
                                  activation='relu'))
                 model.add(MaxPooling2D(pool_size=(1, 3)))
                 model.add(
@@ -528,22 +542,15 @@ class WNV:
                     train_data['Date'].map(lambda x: datetime.datetime.strptime(x, '%Y-%m-%d')))
                 self._feature_size = [train_x.shape[1], max_len]
 
-                class_weight = {1: np.divide(float(n_samples) , float((len(counts) * counts[1]))),
-                                0: np.divide(float(n_samples) , float((len(counts) * counts[0])))}
-                model = Sequential()
-                # define CNN model
-                model.add(TimeDistributed(Conv2D(filters=64, kernel_size=(train_x.shape[1],4),padding='same', activation='relu'),
-                                          input_shape=(None,self._feature_size[0],self._feature_size[1],1)))
-                model.add(TimeDistributed(MaxPooling2D((1,2))))
-                model.add(TimeDistributed(GlobalAveragePooling2D()))
-                # define LSTM model
-                model.add(LSTM(units=100, dropout=0.3))
-                model.add(Dense(1, activation='sigmoid'))
-                model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-                # model.fit(train_x, train_y, epochs=5, batch_size=32)
-                print model.summary()
+                # class_weight = {1: np.divide(float(n_samples) , float((len(counts) * counts[1]))),
+                #                 0: np.divide(float(n_samples) , float((len(counts) * counts[0])))}
+                class_weight = {1: 5,
+                                0: 1}
+                model = CNN_LSTM((self._feature_size[0],4), (None,self._feature_size[0],self._feature_size[1],1))
+                # model.fit_generator(generator=self.generator(train_x, train_y, indices, max_len),
+                #                     epochs=20, class_weight=class_weight, steps_per_epoch=train_x.shape[0]/self._batch_size)
                 model.fit_generator(generator=self.generator(train_x, train_y, indices, max_len),
-                                    epochs=20, class_weight=class_weight, steps_per_epoch=train_x.shape[0]/self._batch_size)
+                                    epochs=1, class_weight=class_weight, steps_per_epoch=1)
                 self._model = model
 
         elif self._model_type == "Pipeline":
