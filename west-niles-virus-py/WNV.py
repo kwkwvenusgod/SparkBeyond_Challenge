@@ -547,10 +547,10 @@ class WNV:
                 class_weight = {1: 5,
                                 0: 1}
                 model = CNN_LSTM((self._feature_size[0],4), (None,self._feature_size[0],self._feature_size[1],1))
-                # model.fit_generator(generator=self.generator(train_x, train_y, indices, max_len),
-                #                     epochs=20, class_weight=class_weight, steps_per_epoch=train_x.shape[0]/self._batch_size)
                 model.fit_generator(generator=self.generator(train_x, train_y, indices, max_len),
-                                    epochs=1, class_weight=class_weight, steps_per_epoch=1)
+                                    epochs=20, class_weight=class_weight, steps_per_epoch=train_x.shape[0]/self._batch_size)
+                # model.fit_generator(generator=self.generator(train_x, train_y, indices, max_len),
+                #                     epochs=1, class_weight=class_weight, steps_per_epoch=1)
                 self._model = model
 
         elif self._model_type == "Pipeline":
