@@ -544,7 +544,7 @@ class WNV:
 
                 # class_weight = {1: np.divide(float(n_samples) , float((len(counts) * counts[1]))),
                 #                 0: np.divide(float(n_samples) , float((len(counts) * counts[0])))}
-                class_weight = {1: 5,
+                class_weight = {1: 10,
                                 0: 1}
                 model = CNN_LSTM((self._feature_size[0],4), (None,self._feature_size[0],self._feature_size[1],1))
                 model.fit_generator(generator=self.generator(train_x, train_y, indices, max_len),
