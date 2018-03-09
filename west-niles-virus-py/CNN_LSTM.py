@@ -32,7 +32,7 @@ class CNN_LSTM:
         self._model.fit_generator(generator = generator, epochs=epochs, steps_per_epoch=steps_per_epoch, class_weight=class_weight)
 
     def predict_generator(self, generator, steps):
-        y_pred = self._model.fit_generator(generator=generator, steps=steps)
+        y_pred = self._model.predict_generator(generator=generator, steps=steps)
         return y_pred
 
     def save(self, file_path):

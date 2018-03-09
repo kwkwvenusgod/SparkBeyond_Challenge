@@ -226,42 +226,43 @@ def process_spray_data(input_data, spray_data, add_spray = False):
 
 
 class WNV:
-    def __init__(self, input_dir, train_data_file, target_col,
-                 model_type='GradientBoostingRegressor',
-                 fit_args={"n_estimators": 10, "learning_rate": 0.001, "loss": "ls",
+    def __init__(self, _input_dir, _train_data_file, _target_col,
+                 _model_type='GradientBoostingRegressor',
+                 _fit_args={"n_estimators": 10, "learning_rate": 0.001, "loss": "ls",
                            "max_features": 5, "max_depth": 7, "random_state": 788954,
-                           "subsample": 1, "verbose": 50}, test_metric='normalized_weighted_gini', na_fill_value=-20000,
-                 silent=False, skip_mapping=False, load_model=None, train_filter=None, metric_type='auto',
-                 load_type='fit_more',
-                 bootstrap=0, bootstrap_seed=None, weight_col=None, feature_mode='label'):
-        self._input_dir = input_dir
-        self._train_data_file = train_data_file
-        self._target_col = target_col
-        self._model_type = model_type
-        self._fit_args = fit_args
-        self._test_metric = test_metric
-        self._na_fill_value = na_fill_value
-        self._silent = silent
-        self._skip_mapping = skip_mapping
-        self._load_model = load_model
-        self._bootstrap = bootstrap
-        self._bootstrap_seed = bootstrap_seed
-        self._weight_col = weight_col
-        self._train_filter = train_filter
-        self._metric_type = metric_type
-        self._load_type = load_type
-        self._features = None
-        self._model = None
-        self._staged_predict = None
-        self._have_feat_importance = False
-        self._predict = None
-        self._data_balance = False
-        self._feature_mapping_dict = {}
-        self._feature_transform_ = None
-        self._feature_mode = feature_mode
-        self._feature_size = []
-        self._batch_size = 34
-        self._model_path = None
+                           "subsample": 1, "verbose": 50}, _test_metric='normalized_weighted_gini', _na_fill_value=-20000,
+                 _silent=False, _skip_mapping=False, _load_model=None, _train_filter=None, _metric_type='auto',
+                 _load_type='fit_more',_features = None,_data_balance = False,_feature_mapping_dict = {},_feature_transform_ =None,
+                 _feature_size=[],_model = None,_staged_predict = None,_have_feat_importance = False,_batch_size=34,_predict=None,
+                 _bootstrap=0, _bootstrap_seed=None, _weight_col=None, _feature_mode='label',_model_path = None,metric_type=None):
+        self._input_dir = _input_dir
+        self._train_data_file = _train_data_file
+        self._target_col = _target_col
+        self._model_type = _model_type
+        self._fit_args = _fit_args
+        self._test_metric = _test_metric
+        self._na_fill_value = _na_fill_value
+        self._silent = _silent
+        self._skip_mapping = _skip_mapping
+        self._load_model = _load_model
+        self._bootstrap = _bootstrap
+        self._bootstrap_seed = _bootstrap_seed
+        self._weight_col = _weight_col
+        self._train_filter = _train_filter
+        self._metric_type = _metric_type
+        self._load_type = _load_type
+        self._features = _features
+        self._model = _model
+        self._staged_predict = _staged_predict
+        self._have_feat_importance = _have_feat_importance
+        self._predict = _predict
+        self._data_balance = _data_balance
+        self._feature_mapping_dict = _feature_mapping_dict
+        self._feature_transform_ = _feature_transform_
+        self._feature_mode = _feature_mode
+        self._feature_size = _feature_size
+        self._batch_size = _batch_size
+        self._model_path = _model_path
 
     def staged_pred_proba(self, x):
         for pred in self._model.staged_predict_proba(x):
@@ -372,7 +373,6 @@ class WNV:
     def load_real_model(self, file_path):
         if self._model_type == 'LSTM':
             model = CNN_LSTM((self._feature_size[0], 4), (None, self._feature_size[0], self._feature_size[1], 1))
-            model.load(file_path)
             model.load(file_path)
             self._model = model
         else:
@@ -802,6 +802,8 @@ class WNV:
         date_list = load_pd_df(train_file_name)['Date'].map(lambda t: datetime.datetime.strptime(t, '%Y-%m-%d'))
         date_indices, max_len = self.process_date_list(date_list)
         y_pred = self.predict(train_x,date_indices=date_indices)
+        y_pred[np.where(y_pred<0.5)] = 0
+        y_pred[np.where(y_pred>=0.5)] = 1
         cfm = confusion_matrix(y_true=y_true, y_pred=y_pred)
 
         print cfm
