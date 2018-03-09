@@ -16,20 +16,20 @@ class CNN_LSTM:
         model = Sequential()
         # define CNN model
         model.add(
-            TimeDistributed(Conv2D(filters=64, kernel_size=kernel_size, padding='same', activation='relu'),
+            TimeDistributed(Conv2D(filters=64, kernel_size=kernel_size, padding='valid', activation='relu'),
                             input_shape=input_shape))
         model.add(TimeDistributed(MaxPooling2D((1, 2))))
-        model.add(TimeDistributed(GlobalAveragePooling2D()))
+        model.add(TimeDistributed(Flatten()))
         # define LSTM model
-        model.add(LSTM(units=100, dropout=0.3))
-        model.add(Dense(10, activation='sigmoid'))
+        model.add(LSTM(units=100))
+        model.add(Dense(1, activation='sigmoid'))
         model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
         # model.fit(train_x, train_y, epochs=5, batch_size=32)
         self._model = model
         print model.summary()
 
     def fit_generator(self, generator, epochs, steps_per_epoch, class_weight=None):
-        self._model.fit_generator(generator = generator, epochs=epochs, steps_per_epoch=steps_per_epoch, class_weight=class_weight)
+        self._model.fit_generator(generator = generator, epochs=epochs, steps_per_epoch=steps_per_epoch, class_weight=class_weight, shuffle=False)
 
     def predict_generator(self, generator, steps):
         y_pred = self._model.predict_generator(generator=generator, steps=steps)
