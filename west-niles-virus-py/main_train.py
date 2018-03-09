@@ -15,6 +15,7 @@ if __name__ == "__main__":
     # wnv.basic_evaluation()
     # wnv.spray_effectiveness_eval()
     wnv.train()
+    wnv.evaluation()
     wnv.save_model('./cnn_lstm')
     # wnv.evaluation()
     # wnv.get_feat_importance()
