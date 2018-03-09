@@ -22,7 +22,7 @@ class CNN_LSTM:
         model.add(TimeDistributed(GlobalAveragePooling2D()))
         # define LSTM model
         model.add(LSTM(units=100, dropout=0.3))
-        model.add(Dense(1, activation='sigmoid'))
+        model.add(Dense(10, activation='sigmoid'))
         model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
         # model.fit(train_x, train_y, epochs=5, batch_size=32)
         self._model = model

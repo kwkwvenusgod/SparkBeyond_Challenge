@@ -1,6 +1,7 @@
 import pickle
 from CNN_LSTM import CNN_LSTM
 from WNV import WNV
+import simplejson
 
 
 file_path = './cnn_lstm/wvn.pickle'

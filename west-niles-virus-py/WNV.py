@@ -232,9 +232,9 @@ class WNV:
                            "max_features": 5, "max_depth": 7, "random_state": 788954,
                            "subsample": 1, "verbose": 50}, _test_metric='normalized_weighted_gini', _na_fill_value=-20000,
                  _silent=False, _skip_mapping=False, _load_model=None, _train_filter=None, _metric_type='auto',
-                 _load_type='fit_more',_features = None,_data_balance = False,_feature_mapping_dict = {},_feature_transform_ =None,
-                 _feature_size=[],_model = None,_staged_predict = None,_have_feat_importance = False,_batch_size=34,_predict=None,
-                 _bootstrap=0, _bootstrap_seed=None, _weight_col=None, _feature_mode='label',_model_path = None,metric_type=None):
+                 _load_type='fit_more',_features=None,_data_balance=False,_feature_mapping_dict={},_feature_transform_=None,
+                 _feature_size=[],_model=None,_staged_predict=None,_have_feat_importance=False,_batch_size=34,_predict=None,
+                 _bootstrap=0, _bootstrap_seed=None, _weight_col=None, _feature_mode='label',_model_path=None):
         self._input_dir = _input_dir
         self._train_data_file = _train_data_file
         self._target_col = _target_col
